@@ -1,0 +1,17 @@
+event_1: When the phone rang, the gray-haired man asked the girl, with quite some little deference, if she would rather for any reason he didn't answer it.
+event_2: "Hello?" he said resonantly into the phone.
+event_3: A man's voice—stone dead, yet somehow rudely, almost obscenely quickened for the occasion—came through at the other end: "Lee? Did I wake you?"
+event_4: "No, Christ. You didn't see her leave at all, then?"
+event_5: "Yeah, yeah. They're not home yet."
+event_6: "I have a feeling she went to work on some bastard in the kitchen."
+event_7: "Where are you now, Arthur?" the gray-haired man asked.
+event_8: "Look, Arthur, you want my advice?" he said.
+event_9: "Yeah. I hear you."
+event_10: "Yeah. I mean if it's all right with you."
+event_11: "All right." The gray-haired man continued for a moment to hold the phone to his ear, then lowered it into its cradle.
+event_12: "What did he say?" the girl immediately asked him.
+event_13: "God! What did you say?" said the girl.
+event_14: The phone suddenly rang.
+event_15: "Hello?" he said into it.
+event_16: "Listen, I just thought you'd want to know, Joanie just barged in."
+event_17: "Listen, Arthur," the gray-haired man interrupted, taking his hand away from his face, "I have a helluva headache all of a sudden."

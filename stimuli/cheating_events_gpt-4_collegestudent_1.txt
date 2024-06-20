@@ -1,0 +1,28 @@
+event_1: When the phone rang, the gray-haired man asked the girl, with quite some little deference, if she would rather for any reason he didn't answer it.
+event_2: The gray-haired man asked her to hurry up, and she raised up on her right forearm just quickly enough so that the movement didn't quite look perfunctory.
+event_3: "Hello?" he said resonantly into the phone.
+event_4: A man's voice—stone dead, yet somehow rudely, almost obscenely quickened for the occasion—came through at the other end: "Lee? Did I wake you?"
+event_5: "The reason I called, Lee, did you happen to notice when Joanie was leaving? Did you happen to notice if she left with the Ellenbogens, by any chance?"
+event_6: "No, Christ. You didn't see her leave at all, then?"
+event_7: "Oh Christ. Who knows? I don't know."
+event_8: "You call the Ellenbogens?" the gray-haired man asked.
+event_9: "Where are you now, Arthur?" the gray-haired man asked. "Home?"
+event_10: "Look, Arthur, you want my advice?" he said.
+event_11: "Yeah, I know."
+event_12: "Arthur, listen, this isn't—"
+event_13: "All right. All right. Let's try to take it a little easy, Arthur," the gray-haired man said.
+event_14: "In the first place," he said into the phone, "I've told you many, many times, Arthur, that's exactly where you make your biggest mistake."
+event_15: "In the first place," the gray-haired man said, and slowly moved his hand and then caressed the little lock that rested on the girl’s forehead, "for a hell of an intelligent guy, you’re about as tactless as it’s humanly possible to be."
+event_16: "We're mismated, that's all."
+event_17: "No, I—" The gray-haired man listened another moment.
+event_18: "Now, Arthur, listen."
+event_19: "All right." The gray-haired man continued for a moment to hold the phone to his ear, then lowered it into its cradle.
+event_20: "What did he say?" the girl immediately asked him.
+event_21: "You were, you were wonderful," the girl said.
+event_22: "Well, it's a very, very tough situation."
+event_23: The phone suddenly rang.
+event_24: "Hello?" he said into it.
+event_25: "Yeah, she, she just barged in, about ten seconds after I spoke to you."
+event_26: "Yeah, what, uh, what happened was, apparently Leona got stinking and then had a goddam crying jag, and Bob wanted Joanie to, to go out and grab a drink with them somewhere."
+event_27: "Listen, Arthur," the gray-haired man interrupted, taking his hand away from his face, "I have a helluva headache all of a sudden."
+event_28: He listened for another moment, then hung up.

@@ -1,0 +1,58 @@
+---
+title: "bayesian_prompt_var"
+author: "yibei"
+date: '2023-03-28'
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+p_load(ggplot2,pscl,tidyverse,brms,sjstats,stargazer)
+```
+
+```{r}
+root_dir <- dirname(getwd())
+data_dir <- file.path(root_dir, "R", "data")
+output_dir <- file.path(root_dir, "R", "outputs")
+```
+
+```{r}
+kl_div_data <- read.csv(file = file.path(data_dir,"gpt-3_20-prompts_kl_div_for_R.csv"))
+cos_sim_data <- read.csv(file = file.path(data_dir,"gpt-3_20-prompts_cos_sim_for_R.csv"))
+```
+
+```{r}
+demeaned_cos_sim <- cos_sim_data %>%
+  mutate(across(c(belief_mean, emotion_mean, intention_mean, concreteness, 
+                  word_counts, avg_word_count, ch_concret, cos_sim_prompt,
+                  cos_sim_story, diff_concret, pa_concret), ~ . - mean(.)))
+```
+
+```{r}
+# Combine the priors
+priors <- c(
+  set_prior("normal(0, 5)", class = "b"),
+  set_prior("normal(0, 5)", class = "Intercept"),
+  set_prior("cauchy(0, 1)", class = "sd", group = "prompt_id")
+)
+
+# Fit the Bayesian mixed-effects model using the specified priors
+model <- brm(
+  formula = cos_sim_story ~ concreteness + word_counts + diff_concret + cos_sim_prompt + avg_word_count + (1 | prompt_id),
+  data = demeaned_cos_sim,
+  prior = priors,
+  family = gaussian(),
+  control = list(max_treedepth = 15),
+  iter = 4000,
+  warmup = 2000
+)
+
+```
+
+```{r}
+summary(model)
+```
+```{r}
+pairs(model)
+```
+
