@@ -1,0 +1,35 @@
+name: Generate Directory Tree
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  generate-tree:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+
+    - name: Make generate_tree.sh executable
+      run: chmod +x ./generate_tree.sh
+
+    - name: Generate directory tree
+      run: ./generate_tree.sh
+
+    - name: Commit and push changes
+      run: |
+        if ! git log -1 --pretty=%B | grep "Update README.md with latest directory structure"; then
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md TREE.md
+          git commit -m "Update README.md with latest directory structure"
+          git push https://${{ secrets.GH_PAT }}@github.com/yibeichan/prettymouth.git HEAD:master
+        else
+          echo "Last commit was made by GitHub Action, skipping..."
+        fi
