@@ -40,26 +40,22 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
 ├── R
-│   ├── bayesian_prompt_var.Rmd
-│   └── data
-│       ├── gpt-3_20-prompts_all.csv
-│       ├── gpt-3_20-prompts_cos_sim_for_R.csv
-│       └── gpt-3_20-prompts_kl_div_for_R.csv
+│   └── bayesian_prompt_var.Rmd
 ├── README.md
 ├── TREE.md
 ├── code
-│   ├── 01_behav_proc.ipynb
-│   ├── 01_behav_proc.py
-│   ├── 01_behav_proc02.ipynb
-│   ├── 01_behav_proc_draft.ipynb
 │   ├── 01_post_fmriprep.py
 │   ├── 02_extract_parcel_timeseries.py
 │   ├── 02_extract_parcel_timeseries.sh
-│   ├── 03_OHBM_poster_v4.ipynb
+│   ├── 03_get_coflt_LOO.py
+│   ├── 03_get_coflt_LOO.sh
+│   ├── 03_get_coflt_PW.py
+│   ├── 03_get_coflt_PW.sh
 │   ├── 03_get_coflt_per_parcel_LOO.py
 │   ├── 03_get_coflt_per_parcel_LOO.sh
 │   ├── 03_get_coflt_per_subject.py
@@ -83,17 +79,17 @@
 │   ├── 07_get_sim_mtx.py
 │   ├── 07_get_sim_mtx.sh
 │   ├── __init__.py
-│   ├── final_plots.ipynb
-│   ├── play.ipynb
-│   ├── play_cifti.ipynb
-│   ├── test.ipynb
-│   ├── utils
-│   │   ├── __init__.py
-│   │   ├── coflt.py
-│   │   ├── encoding.py
-│   │   ├── event_seg.py
-│   │   └── preproc.py
-│   └── visual.ipynb
+│   ├── behav
+│   │   ├── 01_behav_proc.ipynb
+│   │   ├── 01_behav_proc.py
+│   │   ├── 01_behav_proc02.ipynb
+│   │   └── 01_behav_proc_draft.ipynb
+│   └── utils
+│       ├── __init__.py
+│       ├── coflt.py
+│       ├── encoding.py
+│       ├── event_seg.py
+│       └── preproc.py
 ├── environment.yml
 ├── generate_tree.sh
 ├── log.md
@@ -120,6 +116,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 71 files
+5 directories, 66 files
 ```
 <!-- TREE_END -->
