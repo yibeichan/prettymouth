@@ -11,7 +11,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         persist-credentials: false
         fetch-depth: 0
@@ -29,7 +29,7 @@ jobs:
           git config --local user.name "GitHub Action"
           git add README.md TREE.md
           git commit -m "Update README.md with latest directory structure"
-          git push https://${{ secrets.GH_PAT }}@github.com/yibeichan/prettymouth.git HEAD:master
+          git push https://${{ secrets.GH_PAT }}@github.com/yibeichan/prettymouth.git HEAD:main
         else
           echo "Last commit was made by GitHub Action, skipping..."
         fi
