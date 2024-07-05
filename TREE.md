@@ -39,7 +39,8 @@
 │   │   ├── 01_behav_proc.ipynb
 │   │   ├── 01_behav_proc.py
 │   │   ├── 01_behav_proc02.ipynb
-│   │   └── 01_behav_proc_draft.ipynb
+│   │   ├── 01_behav_proc_draft.ipynb
+│   │   └── new_behav.ipynb
 │   └── utils
 │       ├── __init__.py
 │       ├── coflt.py
@@ -72,5 +73,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 66 files
+5 directories, 67 files
 ```
