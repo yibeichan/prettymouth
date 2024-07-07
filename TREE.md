@@ -25,6 +25,8 @@
 │   ├── 04_get_rms_group.sh
 │   ├── 04_get_rms_per_subject.py
 │   ├── 04_get_rms_per_subject.sh
+│   ├── 04_group_distance_parcel.py
+│   ├── 04_group_distance_parcel.sh
 │   ├── 04_permutated_coflt_diff.ipynb
 │   ├── 04_permutation_coflt_diff_LOO.py
 │   ├── 04_permutation_coflt_diff_LOO.sh
@@ -73,5 +75,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 67 files
+5 directories, 69 files
 ```
