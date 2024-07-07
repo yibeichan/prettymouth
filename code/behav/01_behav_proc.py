@@ -134,7 +134,7 @@ def create_event_df(prom, prominent_peaks, word_df, filepath):
     logging.info(f"Creating event DataFrame for prominence {prom}")
     events = []
     for i, n in enumerate(prominent_peaks):
-        start = 0 if i == 0 else prominent_peaks[i-1]
+        start = 14 if i == 0 else prominent_peaks[i-1]
         end = word_df["TR"].max() if i == len(prominent_peaks)-1 else n
         text = " ".join(word_df.loc[(word_df["TR"] >= start) & (word_df["TR"] <= end), "text"].values)
         events.append({"start_TR": start, "end_TR": end, "text": text})
@@ -190,13 +190,13 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     word_df["TR"] = word_df["onset"].apply(lambda x: np.round(x/1.5)).astype(int)
 
     for prom in [0.08, 0.09, 0.1, 0.11, 0.12]:
-        prominent_peaks1, _ = find_peaks(agree_TS_df1['agreement'], prominence=prom, distance=3)
+        prominent_peaks1, _ = find_peaks(agree_TS_df1['agreement'], prominence=prom, distance=5)
         logging.info(f"There are {len(prominent_peaks1)} prominent (agreement = {prom}) peaks in agreement")
         np.savetxt(os.path.join(output_dir, f"prominent_peaks_{int(prom*100):03}.txt"), prominent_peaks1, fmt='%d')
         filepath1 = os.path.join(output_dir, f"event_df_prom_{int(prom*100):03}.csv")
         create_event_df(prom, prominent_peaks1, word_df, filepath1)
 
-        prominent_peaks2, _ = find_peaks(agree_TS_df1_filtered['agreement'], prominence=prom, distance=3)
+        prominent_peaks2, _ = find_peaks(agree_TS_df1_filtered['agreement'], prominence=prom, distance=5)
         logging.info(f"There are {len(prominent_peaks2)} prominent (agreement = {prom}) peaks in agreement_filtered")
         np.savetxt(os.path.join(output_dir, f"prominent_peaks_filtered_{int(prom*100):03}.txt"), prominent_peaks2, fmt='%d')
         filepath2 = os.path.join(output_dir, f"event_df_prom_filtered_{int(prom*100):03}.csv")
