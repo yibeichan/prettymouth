@@ -3,15 +3,23 @@ import sys
 import glob
 import logging
 import numpy as np
-from scipy.spatial.distance import euclidean, correlation, cityblock
-from dtaidistance import dtw
 from utils import setup_logging
+
+from scipy.spatial.distance import euclidean, cityblock, correlation
+from scipy.stats import gaussian_kde, entropy
+from sklearn.metrics import mutual_info_score
+from dtaidistance import dtw
+
 from dotenv import load_dotenv
 
 def get_average(npy_files):
     """Calculate the average of numpy arrays loaded from the given files."""
     sum_array = None
     num_files = len(npy_files)
+    
+    if num_files == 0:
+        logging.warning("No files were processed. Returning None.")
+        return None
     
     for file in npy_files:
         try:
@@ -25,10 +33,6 @@ def get_average(npy_files):
 
         sum_array += data
 
-    if num_files == 0:
-        logging.warning("No files were processed. Returning None.")
-        return None
-
     return sum_array / num_files
 
 def calculate_and_save_average(npy_files, output_file):
@@ -39,31 +43,45 @@ def calculate_and_save_average(npy_files, output_file):
     else:
         logging.info(f"Calculating average for {output_file}...")
         avg_array = get_average(npy_files)
-        np.save(output_file, avg_array)
+        if avg_array is not None:
+            np.save(output_file, avg_array)
         return avg_array
 
-def get_diagonal(array_3d):
-    """Extract the diagonal elements from the 3D array along the third dimension."""
-    _, _, n_TR = array_3d.shape
-    return np.array([np.diagonal(array_3d[:, :, i]) for i in range(n_TR)]).T
+def get_kl(a, b, num_points=1000, smoothing=1e-10):
+    """Calculate the KL divergence between two time series."""
+    kde_a = gaussian_kde(a)
+    kde_b = gaussian_kde(b)
+
+    min_val = min(min(a), min(b))
+    max_val = max(max(a), max(b))
+    x_eval = np.linspace(min_val, max_val, num_points)
+
+    pdf_a = kde_a(x_eval) + smoothing
+    pdf_b = kde_b(x_eval) + smoothing
+
+    pdf_a /= np.sum(pdf_a)
+    pdf_b /= np.sum(pdf_b)
+
+    return entropy(pdf_a, pdf_b)
+
+def get_mutinfo(a, b):
+    a_discretized = np.digitize(a, bins=np.histogram_bin_edges(a, bins='auto'))
+    b_discretized = np.digitize(b, bins=np.histogram_bin_edges(b, bins='auto'))
+
+    mutual_info = mutual_info_score(a_discretized, b_discretized)
+    return 1 - mutual_info
 
 def calculate_distances(row_A, row_B):
     """Calculate various distances between two rows."""
-    # Euclidean Distance using scipy
     euclidean_distance = euclidean(row_A, row_B)
-
-    # DTW Distance using dtw library
     dtw_distance = dtw.distance_fast(row_A, row_B)
-    
-    # Pearson Correlation Distance using scipy
-    pearson_distance = 1-correlation(row_A, row_B)
-
-    # Manhattan Distance using scipy
+    pearson_distance = 1 - correlation(row_A, row_B)
     manhattan_distance = cityblock(row_A, row_B)
+    kl_distance = get_kl(row_A, row_B)
+    mutual_info_distance = get_mutinfo(row_A, row_B)
 
-    return euclidean_distance, dtw_distance, pearson_distance, manhattan_distance
+    return euclidean_distance, dtw_distance, pearson_distance, manhattan_distance, kl_distance, mutual_info_distance
 
-# Function to normalize an array using Min-Max scaling
 def normalize(arr):
     return (arr - np.min(arr)) / (np.max(arr) - np.min(arr))
 
@@ -74,40 +92,35 @@ def main(n_parcel, affair_coflt_files, paranoia_coflt_files, dtw_output_dir):
     affair_coflt_avg = calculate_and_save_average(affair_coflt_files, affair_avg_file)
     paranoia_coflt_avg = calculate_and_save_average(paranoia_coflt_files, paranoia_avg_file)
 
-    logging.info("Extracting diagonals...")
-    affair_coflt_avg_diag = get_diagonal(affair_coflt_avg)
-    paranoia_coflt_avg_diag = get_diagonal(paranoia_coflt_avg)
+    if affair_coflt_avg is None or paranoia_coflt_avg is None:
+        logging.error("One or both of the average arrays could not be calculated. Exiting.")
+        return
 
     start, end = 14, 465
-    A = affair_coflt_avg_diag[:, start:end]
-    B = paranoia_coflt_avg_diag[:, start:end]
+    A = affair_coflt_avg[:, :, start:end]
+    B = paranoia_coflt_avg[:, :, start:end]
 
-    # Initialize arrays to store distances
-    euclidean_distances = np.zeros(n_parcel)
-    dtw_distances = np.zeros(n_parcel)
-    pearson_distances = np.zeros(n_parcel)
-    manhattan_distances = np.zeros(n_parcel)
+    # Initialize matrices to store distances
+    distance_measures = ['euclidean', 'dtw', 'pearson', 'manhattan', 'kl', 'mutual_info']
+    distance_matrices = {measure: np.zeros((n_parcel, n_parcel)) for measure in distance_measures}
 
     for i in range(n_parcel):
-        row_A = A[i, :]
-        row_B = B[i, :]
+        for j in range(i, n_parcel):
+            row_A = A[i, j, :]
+            row_B = B[i, j, :]
 
-        euclidean_distances[i], dtw_distances[i], pearson_distances[i], manhattan_distances[i] = calculate_distances(row_A, row_B)
+            distances = calculate_distances(row_A, row_B)
 
-    np.savez_compressed(os.path.join(dtw_output_dir, "parcel_distances"), 
-                        euclidean=euclidean_distances, dtw=dtw_distances, 
-                        pearson=pearson_distances, manhattan=manhattan_distances)
+            for measure, dist in zip(distance_measures, distances):
+                distance_matrices[measure][i, j] = dist
+                if i != j:
+                    distance_matrices[measure][j, i] = dist
 
-    # Normalize the distances
-    euclidean_distances_normalized = normalize(euclidean_distances)
-    dtw_distances_normalized = normalize(dtw_distances)
-    pearson_distances_normalized = normalize(pearson_distances)
-    manhattan_distances_normalized = normalize(manhattan_distances)
+    np.savez_compressed(os.path.join(dtw_output_dir, "parcel_distances"), **distance_matrices)
 
-    # save normalized distances
-    np.savez_compressed(os.path.join(dtw_output_dir, "parcel_distances_normalized"), 
-                        euclidean=euclidean_distances_normalized, dtw=dtw_distances_normalized, 
-                        pearson=pearson_distances_normalized, manhattan=manhattan_distances_normalized)
+    # Normalize and save distances
+    normalized_distance_matrices = {measure: normalize(matrix) for measure, matrix in distance_matrices.items()}
+    np.savez_compressed(os.path.join(dtw_output_dir, "parcel_distances_normalized"), **normalized_distance_matrices)
 
 if __name__ == '__main__':
     load_dotenv()
