@@ -150,7 +150,7 @@ if __name__ == '__main__':
     log_dir = os.path.join(output_dir, "logs")
     setup_logging(base_dir=base_dir, task="group_distance_perm", task_id=f"{n_parcel}parcel")
 
-    n_jobs = max(1, multiprocessing.cpu_count() // 2)  # Adjust the number of jobs to reduce memory usage
+    n_jobs = max(1, multiprocessing.cpu_count())
     print(f"Running {n_jobs} jobs. Initial memory usage: {monitor_memory():.2f} GB")
     
     main(affair_coflt, paranoia_coflt, distance_output_dir, n_jobs)
