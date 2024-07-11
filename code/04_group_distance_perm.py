@@ -64,6 +64,9 @@ def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=100
     
     group1_avg = np.mean(group1_tsISC, axis=0, dtype=np.float32)
     group2_avg = np.mean(group2_tsISC, axis=0, dtype=np.float32)
+
+    del group1_tsISC, group2_tsISC
+    gc.collect()
     
     indices = np.triu_indices(n_parcel)
     
@@ -85,7 +88,7 @@ def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=100
             except Exception as e:
                 logging.error(f"Error in permutation: {e}")
             finally:
-                gc.collect()  # Periodically clean up memory during the permutation process
+                gc.collect()
             print(f"Permutation done. Current memory usage: {monitor_memory():.2f} GB")
 
     p_values /= n_permutations
@@ -150,7 +153,7 @@ if __name__ == '__main__':
     log_dir = os.path.join(output_dir, "logs")
     setup_logging(base_dir=base_dir, task="group_distance_perm", task_id=f"{n_parcel}parcel")
 
-    n_jobs = max(1, multiprocessing.cpu_count())
+    n_jobs = 4
     print(f"Running {n_jobs} jobs. Initial memory usage: {monitor_memory():.2f} GB")
     
     main(affair_coflt, paranoia_coflt, distance_output_dir, n_jobs)
