@@ -3,12 +3,10 @@ import os
 import sys
 import numpy as np
 import logging
-import multiprocessing
 from scipy.spatial.distance import euclidean
 from statsmodels.stats.multitest import fdrcorrection
 import gc
 import psutil
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 def monitor_memory():
     process = psutil.Process(os.getpid())
@@ -37,7 +35,7 @@ def permuted_distance_matrix(permuted_labels, all_tsISC, group_size, indices):
     return distance_matrix
 
 @profile
-def compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group_size, indices, p_values, total_subjects):
+def compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group_size, indices, p_values, total_subjects, permuted_distances):
     try:
         np.random.seed(seed)
         permuted_labels = np.random.permutation(total_subjects)
@@ -49,14 +47,15 @@ def compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group
                 p_values[i, j] += 1
                 if i != j:
                     p_values[j, i] += 1
+        permuted_distances.append(permuted_distance)
     except Exception as e:
         logging.error(f"Error in permutation with seed {seed}: {e}")
     finally:
-        del permuted_labels, permuted_distance
+        del permuted_labels
         gc.collect()  # Force garbage collection after permutation is done
 
 @profile
-def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=1000, n_jobs=1):
+def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=1000):
     total_subjects = group1_tsISC.shape[0] + group2_tsISC.shape[0]
     group_size = group1_tsISC.shape[0]
     all_tsISC = np.concatenate((group1_tsISC, group2_tsISC), axis=0, dtype=np.float32)
@@ -74,22 +73,15 @@ def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=100
     print(f"Observed distance matrix calculated. Current memory usage: {monitor_memory():.2f} GB")
 
     p_values = np.zeros((n_parcel, n_parcel), dtype=np.float32)
+    permuted_distances = []
 
     seeds = np.random.randint(0, 1e6, size=n_permutations)
     
-    print("Start parallel computing")
-    pool_args = [(seed, observed_distance_matrix, all_tsISC, group_size, indices, p_values, total_subjects) for seed in seeds]
+    print("Start computing permutations")
     
-    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-        futures = [executor.submit(compute_and_update_p_values, *args) for args in pool_args]
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                logging.error(f"Error in permutation: {e}")
-            finally:
-                gc.collect()
-            print(f"Permutation done. Current memory usage: {monitor_memory():.2f} GB")
+    for seed in seeds:
+        compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group_size, indices, p_values, total_subjects, permuted_distances)
+        print(f"Permutation with seed {seed} done. Current memory usage: {monitor_memory():.2f} GB")
 
     p_values /= n_permutations
 
@@ -102,27 +94,27 @@ def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=100
         if i != j:
             p_values_corrected[j, i] = p_values_corrected_flat[idx]
     
-    return observed_distance_matrix, p_values, p_values_corrected
+    return observed_distance_matrix, p_values, p_values_corrected, permuted_distances
 
 @profile
-def save_results_as_npz(observed_distance_matrix, p_values, p_values_corrected, distance_output_dir):
+def save_results_as_npz(observed_distance_matrix, p_values, p_values_corrected, permuted_distances, distance_output_dir):
     results_path = os.path.join(distance_output_dir, "distance_per_parcel_permutated.npz")
     print(f"Saving results to {results_path}...")
     np.savez(results_path, observed_distance_matrix=observed_distance_matrix, 
-             p_values=p_values, p_values_corrected=p_values_corrected)
+             p_values=p_values, p_values_corrected=p_values_corrected, permuted_distances=permuted_distances)
     print(f"Results saved. Current memory usage: {monitor_memory():.2f} GB")
 
 @profile
-def main(affair_coflt, paranoia_coflt, distance_output_dir, n_jobs):
+def main(affair_coflt, paranoia_coflt, distance_output_dir):
     start, end = 14, 465
     group1_tsISC = affair_coflt[:, :, :, start:end]
     group2_tsISC = paranoia_coflt[:, :, :, start:end]
 
-    observed_distance_matrix, p_values, p_values_corrected = permute_and_compute_distances(
-        group1_tsISC, group2_tsISC, n_permutations=1000, n_jobs=n_jobs
+    observed_distance_matrix, p_values, p_values_corrected, permuted_distances = permute_and_compute_distances(
+        group1_tsISC, group2_tsISC, n_permutations=1000
     )
     
-    save_results_as_npz(observed_distance_matrix, p_values, p_values_corrected, distance_output_dir)
+    save_results_as_npz(observed_distance_matrix, p_values, p_values_corrected, permuted_distances, distance_output_dir)
 
 if __name__ == '__main__':
     from dotenv import load_dotenv
@@ -153,7 +145,6 @@ if __name__ == '__main__':
     log_dir = os.path.join(output_dir, "logs")
     setup_logging(base_dir=base_dir, task="group_distance_perm", task_id=f"{n_parcel}parcel")
 
-    n_jobs = 4
-    print(f"Running {n_jobs} jobs. Initial memory usage: {monitor_memory():.2f} GB")
+    print(f"Initial memory usage: {monitor_memory():.2f} GB")
     
-    main(affair_coflt, paranoia_coflt, distance_output_dir, n_jobs)
+    main(affair_coflt, paranoia_coflt, distance_output_dir)
