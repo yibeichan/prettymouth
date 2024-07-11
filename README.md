@@ -43,6 +43,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -73,6 +74,8 @@
 │   ├── 04_get_rms_per_subject.sh
 │   ├── 04_group_distance_parcel.py
 │   ├── 04_group_distance_parcel.sh
+│   ├── 04_group_distance_perm.py
+│   ├── 04_group_distance_perm.sh
 │   ├── 04_permutated_coflt_diff.ipynb
 │   ├── 04_permutation_coflt_diff_LOO.py
 │   ├── 04_permutation_coflt_diff_LOO.sh
@@ -88,6 +91,7 @@
 │   │   ├── 01_behav_proc.py
 │   │   ├── 01_behav_proc02.ipynb
 │   │   ├── 01_behav_proc_draft.ipynb
+│   │   ├── get_character.py
 │   │   └── new_behav.ipynb
 │   └── utils
 │       ├── __init__.py
@@ -121,6 +125,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 69 files
+5 directories, 72 files
 ```
 <!-- TREE_END -->
