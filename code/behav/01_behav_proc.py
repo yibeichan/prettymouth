@@ -10,6 +10,8 @@ import ast
 from bisect import bisect_left
 from collections import Counter
 from scipy.signal import find_peaks
+from kneed import KneeLocator
+import matplotlib.pyplot as plt
 
 def setup_logging(base_dir, task, task_id):
     """
@@ -173,6 +175,42 @@ def process_thresholds(threshold_list, agree_tr_df, output_prefix, word_df, seg_
     
     return peaks_info
 
+def plot_peaks_vs_thresholds(data, filepath, width=15, height=8, label_fontsize=15, tick_fontsize=13, dpi=100):
+    """
+    Plots the number of prominent peaks vs. agreement threshold and identifies the elbow point.
+    Saves the plot as an SVG file with specified pixel dimensions.
+    
+    Args:
+        data (np.ndarray): 2D array with thresholds and corresponding number of peaks.
+        output_file (str): Path to save the output SVG file.
+        width_px (int): Width of the figure in pixels.
+        height_px (int): Height of the figure in pixels.
+        dpi (int): Dots per inch (DPI) for the figure.
+    """
+
+    # Extracting the columns
+    thresholds = data['threshold']
+    n_peaks = data['n_peaks']
+
+    # Identify the elbow point using Kneedle algorithm
+    kneedle = KneeLocator(thresholds, n_peaks, curve='convex', direction='decreasing', S=2.0)
+    elbow_point = kneedle.elbow
+    
+
+    # Creating the line plot
+    plt.figure(figsize=(width, height), dpi=dpi)
+    plt.plot(thresholds, n_peaks, marker='o', linestyle='-', label='Number of Prominent Peaks')
+    plt.axvline(elbow_point, color='r', linestyle='--', label=f'Elbow Point: Prominence = {elbow_point:.2f}')
+    plt.xlabel('Prominence', fontsize=label_fontsize)
+    plt.ylabel('Number of Prominent Peaks', fontsize=label_fontsize)
+    plt.xticks(np.arange(min(thresholds), max(thresholds) + 0.01, 0.01), fontsize=tick_fontsize)
+    plt.yticks(fontsize=tick_fontsize)
+    plt.legend(fontsize=label_fontsize)
+    plt.savefig(filepath, format='svg', dpi=dpi)
+    plt.close()
+    # Print the elbow point for reference
+    logging.info(f'Elbow point: {elbow_point}')
+
 def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     logging.info("Starting main process")
     response_df1 = convert_to_TRs(df1, 1.5)
@@ -222,8 +260,14 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     peak_th_filtered = process_thresholds(th_filtered_lst, agree_TR_df1_filtered, "eventseg_filtered", word_df, seg_df, output_dir, filtered=True)
 
     # Convert the lists to NumPy arrays
-    peak_th_array = np.array(peak_th, dtype=[('threshold', 'f4'), ('number_of_peaks', 'i4')])
-    peak_th_filtered_array = np.array(peak_th_filtered, dtype=[('threshold', 'f4'), ('number_of_peaks', 'i4')])
+    peak_th_array = np.array(peak_th, dtype=[('threshold', 'f4'), ('n_peaks', 'i4')])
+    peak_th_filtered_array = np.array(peak_th_filtered, dtype=[('threshold', 'f4'), ('n_peaks', 'i4')])
+
+    figurepath1 = os.path.join(output_dir, "elbow_prominent_peaks_eventseg.svg")
+    plot_peaks_vs_thresholds(peak_th_array, figurepath1)
+
+    figurepath2 = os.path.join(output_dir, "elbow_prominent_peaks_eventseg_filtered.svg")
+    plot_peaks_vs_thresholds(peak_th_filtered_array, figurepath2)
 
     # Save the justification data as NumPy arrays
     np.save(os.path.join(output_dir, 'n_peak_prom_threshold.npy'), peak_th_array)
