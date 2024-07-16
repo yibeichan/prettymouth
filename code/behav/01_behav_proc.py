@@ -33,14 +33,13 @@ def setup_logging(base_dir, task, task_id):
 def seconds2TRs(resp_seconds, TR=1.5):
     logging.info("Converting seconds to TRs")
     resp_seconds = np.array(resp_seconds)
-    resp_TRs = np.unique(np.round(resp_seconds / TR).astype(int))
-    return resp_TRs
+    resp_TRs = np.round(resp_seconds / TR).astype(int)
+    return np.unique(resp_TRs)
 
 def convert2binary(lst, size):
     logging.info("Converting list to binary array")
     binary_array = np.zeros(size, dtype=int)
-    valid_indices = np.array(lst)
-    valid_indices = valid_indices[valid_indices < size]
+    valid_indices = np.clip(lst, 0, size-1)
     binary_array[valid_indices] = 1
     return binary_array
 
@@ -54,34 +53,20 @@ def convert_to_TRs(df, TR, n_TR=465):
 def get_agreement(df, unit='TR'):
     logging.info("Calculating agreement")
     response_col = 'key_resp_2.TR'
-    
     all_responses = np.concatenate(df[response_col].dropna().values)
-    
     response_counts = Counter(all_responses)
-    agreement_df = pd.DataFrame(list(response_counts.items()), columns=[unit, 'count'])
-    agreement_df = agreement_df.sort_values(by=unit).reset_index(drop=True)
+    agreement_df = pd.DataFrame(list(response_counts.items()), columns=[unit, 'count']).sort_values(by=unit).reset_index(drop=True)
     agreement_df['agreement'] = agreement_df['count'] / df.shape[0]
     
     if unit == 'TR':
-        agreement_df = agreement_df[(agreement_df[unit] >= 14) & (agreement_df[unit] < 465)]
-        # agreement_df[unit] = agreement_df[unit] - 14
+        agreement_df = agreement_df[(agreement_df[unit] >= 14) & (agreement_df[unit] < 466)]
     elif unit == 'second':
-        agreement_df = agreement_df[(agreement_df[unit] >= 21) & (agreement_df[unit] < 697)]
-        # agreement_df[unit] = agreement_df[unit] - 21
+        agreement_df = agreement_df[(agreement_df[unit] >= 21) & (agreement_df[unit] < 699)]
     else:
         logging.error("Invalid unit provided")
         raise ValueError("Please enter a valid unit: TR or second")
     
-    agreement_df = agreement_df.reset_index(drop=True)
-    return agreement_df
-
-def get_tsdf(df, n_TR=465):
-    logging.info("Generating time series DataFrame")
-    unit = 'TR'
-    ts_df = pd.DataFrame({unit: np.arange(n_TR)})
-    
-    ts_df = ts_df.merge(df[[unit, "agreement"]], on=unit, how='left').fillna(0)
-    return ts_df
+    return agreement_df.reset_index(drop=True)
 
 def filter_elements(A, list_B, delta=3):
     """
@@ -130,16 +115,63 @@ def filter_elements(A, list_B, delta=3):
         return B
     return None
 
-def create_event_df(prom, prominent_peaks, word_df, filepath):
-    logging.info(f"Creating event DataFrame for prominence {prom}")
+def map_boundary2seg(seg_df, boundaries, filepath):
+    result = []
+
+    for i, r in enumerate(boundaries):
+        if i == 0:  # First iteration
+            seg_index = seg_df[seg_df['onset_TRs'] == r].index[-1]
+            seg = seg_df.iloc[:seg_index]['Seg'].tolist()
+        elif i == len(boundaries) - 1:  # Last iteration
+            prev_r = boundaries[i-1]
+            prev_seg_index = seg_df[seg_df['onset_TRs'] == prev_r].index[-1]
+            seg = seg_df.iloc[prev_seg_index:]['Seg'].tolist()
+        else:  # Subsequent iterations
+            prev_r = boundaries[i-1]
+            prev_seg_index = seg_df[seg_df['onset_TRs'] == prev_r].index[-1]
+            seg_index = seg_df[seg_df['onset_TRs'] == r].index[-1]
+            seg = seg_df.iloc[prev_seg_index:seg_index]['Seg'].tolist()
+
+        result.append({'boundary': r, 'segments': seg[0]})
+
+    pd.DataFrame(result).to_csv(filepath, index=False)
+
+def map_boundary2word(word_df,boundaries, filepath):
     events = []
-    for i, n in enumerate(prominent_peaks):
-        start = 14 if i == 0 else prominent_peaks[i-1]
-        end = word_df["TR"].max() if i == len(prominent_peaks)-1 else n
+    for i, n in enumerate(boundaries):
+        start = 14 if i == 0 else boundaries[i-1]
+        end = word_df["TR"].max() if i == len(boundaries)-1 else n
         text = " ".join(word_df.loc[(word_df["TR"] >= start) & (word_df["TR"] <= end), "text"].values)
         events.append({"start_TR": start, "end_TR": end, "text": text})
     event_df = pd.DataFrame(events)
     event_df.to_csv(filepath, index=False)
+
+def process_thresholds(threshold_list, agree_tr_df, output_prefix, word_df, seg_df, output_dir, filtered=False):
+    peaks_info = []
+    
+    for th in threshold_list:
+        prominent_peaks, _ = find_peaks(agree_tr_df['agreement'], prominence=th)
+        logging.info(f"There are {len(prominent_peaks)} prominent (threshold = {th}) peaks in {output_prefix}")
+        
+        # Save the prominent peaks to a text file
+        np.savetxt(os.path.join(output_dir, f"prominent_peaks_{output_prefix}_{int(th*100):03}.txt"), prominent_peaks, fmt='%d')
+        
+        # Create the filepath for the event dataframe CSV
+        filepath = os.path.join(output_dir, f"event_df_prom_{output_prefix}_{int(th*100):03}.csv")
+        
+        # Determine boundaries and append the final TR value
+        boundaries = agree_tr_df['TR'].iloc[prominent_peaks].tolist()
+        boundaries.append(465.0)
+        
+        if not filtered:
+            map_boundary2word(word_df, boundaries, filepath)
+        else:
+            map_boundary2seg(seg_df, boundaries, filepath)
+        
+        # Save threshold and number of peaks to the list
+        peaks_info.append((th, len(prominent_peaks)))
+    
+    return peaks_info
 
 def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     logging.info("Starting main process")
@@ -155,8 +187,8 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     agree_TR_df2a = get_agreement(response_df2a)
     agree_TR_df2b = get_agreement(response_df2b)
 
-    seg_df['onset_TRs'] = seg_df['onset_sec'].apply(lambda x: seconds2TRs(x)[0])
-    sentence_onset_TRs = np.unique(seg_df['onset_TRs'])
+    seg_df['onset_TRs'] = seg_df['onset_sec'].apply(lambda x: seconds2TRs(x)[0]) + 14 # annotated story starts at 0 not 14, so we need to add 14
+    sentence_onset_TRs = np.unique(seg_df['onset_TRs']) 
 
     agree_TR_df1['filtered_TRs'] = agree_TR_df1['TR'].apply(lambda x: filter_elements(x, sentence_onset_TRs))
 
@@ -177,30 +209,25 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     agree_TR_df2a.to_pickle(os.path.join(output_dir, "agreement_evidence_affair.pkl"))
     agree_TR_df2b.to_pickle(os.path.join(output_dir, "agreement_evidence_paranoia.pkl"))
 
-    agree_TS_df1 = get_tsdf(agree_TR_df1)
-    agree_TS_df1_filtered = get_tsdf(agree_TR_df1_filtered)
-    agree_TS_df2a = get_tsdf(agree_TR_df2a)
-    agree_TS_df2b = get_tsdf(agree_TR_df2b)
-    
-    agree_TS_df1.to_pickle(os.path.join(output_dir, "agreement_eventseg_ts.pkl"))
-    agree_TS_df1_filtered.to_pickle(os.path.join(output_dir, "agreement_eventseg_filtered_ts.pkl"))
-    agree_TS_df2a.to_pickle(os.path.join(output_dir, "agreement_evidence_affair_ts.pkl"))
-    agree_TS_df2b.to_pickle(os.path.join(output_dir, "agreement_evidence_paranoia_ts.pkl"))
-
     word_df["TR"] = word_df["onset"].apply(lambda x: np.round(x/1.5)).astype(int)
 
-    for prom in [0.08, 0.09, 0.1, 0.11, 0.12]:
-        prominent_peaks1, _ = find_peaks(agree_TS_df1['agreement'], prominence=prom, distance=5)
-        logging.info(f"There are {len(prominent_peaks1)} prominent (agreement = {prom}) peaks in agreement")
-        np.savetxt(os.path.join(output_dir, f"prominent_peaks_{int(prom*100):03}.txt"), prominent_peaks1, fmt='%d')
-        filepath1 = os.path.join(output_dir, f"event_df_prom_{int(prom*100):03}.csv")
-        create_event_df(prom, prominent_peaks1, word_df, filepath1)
+    th = np.around(agree_TR_df1['agreement'].quantile(0.85), decimals=2)
+    th_filtered = np.around(agree_TR_df1_filtered['agreement'].quantile(0.85), decimals=2)
 
-        prominent_peaks2, _ = find_peaks(agree_TS_df1_filtered['agreement'], prominence=prom, distance=5)
-        logging.info(f"There are {len(prominent_peaks2)} prominent (agreement = {prom}) peaks in agreement_filtered")
-        np.savetxt(os.path.join(output_dir, f"prominent_peaks_filtered_{int(prom*100):03}.txt"), prominent_peaks2, fmt='%d')
-        filepath2 = os.path.join(output_dir, f"event_df_prom_filtered_{int(prom*100):03}.csv")
-        create_event_df(prom, prominent_peaks2, word_df, filepath2)
+    th_lst = [round(th, 2) for th in np.arange(th-0.05, th+0.1, 0.01)]
+    th_filtered_lst = [round(th_filtered, 2) for th_filtered in np.arange(th_filtered-0.05, th_filtered+0.1, 0.01)]
+
+
+    peak_th = process_thresholds(th_lst, agree_TR_df1, "eventseg", word_df, seg_df, output_dir, filtered=False)
+    peak_th_filtered = process_thresholds(th_filtered_lst, agree_TR_df1_filtered, "eventseg_filtered", word_df, seg_df, output_dir, filtered=True)
+
+    # Convert the lists to NumPy arrays
+    peak_th_array = np.array(peak_th, dtype=[('threshold', 'f4'), ('number_of_peaks', 'i4')])
+    peak_th_filtered_array = np.array(peak_th_filtered, dtype=[('threshold', 'f4'), ('number_of_peaks', 'i4')])
+
+    # Save the justification data as NumPy arrays
+    np.save(os.path.join(output_dir, 'n_peak_prom_threshold.npy'), peak_th_array)
+    np.save(os.path.join(output_dir, 'n_peak_prom_threshold_filtered.npy'), peak_th_filtered_array)
 
 if __name__ == '__main__':
     logging.info("Loading environment variables")
