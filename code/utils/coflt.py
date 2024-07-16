@@ -1,7 +1,6 @@
 from typing import Tuple, Dict, List
 from datetime import datetime
 import numpy as np
-from tqdm import tqdm
 from scipy.stats import zscore
 from scipy.linalg import norm
 from statsmodels.stats.multitest import multipletests
@@ -236,6 +235,8 @@ def permutation_test(matrix1: np.ndarray, matrix2: np.ndarray, n_permutations: i
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: A tuple containing the difference matrix, the corrected p-values, and the p-value matrix.
     """
+    from tqdm import tqdm
+    
     matrix1_upper = extract_upper_triangle(matrix1)
     matrix2_upper = extract_upper_triangle(matrix2)
 
