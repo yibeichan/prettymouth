@@ -5,6 +5,7 @@ import numpy as np
 import logging
 from scipy.spatial.distance import euclidean
 from statsmodels.stats.multitest import fdrcorrection
+import multiprocessing as mp
 import gc
 import psutil
 
@@ -17,7 +18,7 @@ def monitor_memory():
 def calculate_distance_matrix(group1_avg, group2_avg, indices):
     distance_matrix = np.zeros((group1_avg.shape[0], group1_avg.shape[1]), dtype=np.float32)
     for i, j in zip(*indices):
-        distance_matrix[i, j] = euclidean(group1_avg[:, i, j], group2_avg[:, i, j])
+        distance_matrix[i, j] = euclidean(group1_avg[i, j, :], group2_avg[i, j, :])
         if i != j:
             distance_matrix[j, i] = distance_matrix[i, j]
     return distance_matrix
@@ -55,20 +56,28 @@ def compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group
         gc.collect()  # Force garbage collection after permutation is done
 
 @profile
-def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=1000):
+def worker(chunk, observed_distance_matrix, all_tsISC, group_size, indices, total_subjects, n_parcel):
+    local_p_values = np.zeros((n_parcel, n_parcel), dtype=np.float32)
+    local_permuted_distances = []
+    for seed in chunk:
+        compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group_size, indices, local_p_values, total_subjects, local_permuted_distances)
+        print(f"Permutation with seed {seed} done. Current memory usage: {monitor_memory():.2f} GB")
+    return local_p_values, local_permuted_distances
+
+@profile
+def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=1000, n_jobs=4):
     total_subjects = group1_tsISC.shape[0] + group2_tsISC.shape[0]
     group_size = group1_tsISC.shape[0]
     all_tsISC = np.concatenate((group1_tsISC, group2_tsISC), axis=0, dtype=np.float32)
     n_parcel = group1_tsISC.shape[1]
-    
+
     group1_avg = np.mean(group1_tsISC, axis=0, dtype=np.float32)
     group2_avg = np.mean(group2_tsISC, axis=0, dtype=np.float32)
 
     del group1_tsISC, group2_tsISC
     gc.collect()
-    
+
     indices = np.triu_indices(n_parcel)
-    
     observed_distance_matrix = calculate_distance_matrix(group1_avg, group2_avg, indices)
     print(f"Observed distance matrix calculated. Current memory usage: {monitor_memory():.2f} GB")
 
@@ -76,24 +85,29 @@ def permute_and_compute_distances(group1_tsISC, group2_tsISC, n_permutations=100
     permuted_distances = []
 
     seeds = np.random.randint(0, 1e6, size=n_permutations)
-    
+    chunks = np.array_split(seeds, n_jobs)
+
     print("Start computing permutations")
-    
-    for seed in seeds:
-        compute_and_update_p_values(seed, observed_distance_matrix, all_tsISC, group_size, indices, p_values, total_subjects, permuted_distances)
-        print(f"Permutation with seed {seed} done. Current memory usage: {monitor_memory():.2f} GB")
+
+    with mp.Pool(processes=n_jobs) as pool:
+        results = pool.starmap(worker, [(chunk, observed_distance_matrix, all_tsISC, group_size, indices, total_subjects, n_parcel) for chunk in chunks])
+
+    # Aggregate results
+    for local_p_values, local_permuted_distances in results:
+        p_values += local_p_values
+        permuted_distances.extend(local_permuted_distances)
 
     p_values /= n_permutations
 
     p_values_flat = p_values[indices]
     _, p_values_corrected_flat = fdrcorrection(p_values_flat)
-    
+
     p_values_corrected = np.zeros((n_parcel, n_parcel), dtype=np.float32)
     for idx, (i, j) in enumerate(zip(*indices)):
         p_values_corrected[i, j] = p_values_corrected_flat[idx]
         if i != j:
             p_values_corrected[j, i] = p_values_corrected_flat[idx]
-    
+
     return observed_distance_matrix, p_values, p_values_corrected, permuted_distances
 
 @profile
@@ -111,7 +125,7 @@ def main(affair_coflt, paranoia_coflt, distance_output_dir):
     group2_tsISC = paranoia_coflt[:, :, :, start:end]
 
     observed_distance_matrix, p_values, p_values_corrected, permuted_distances = permute_and_compute_distances(
-        group1_tsISC, group2_tsISC, n_permutations=1000
+        group1_tsISC, group2_tsISC, n_permutations=1000, n_jobs=4
     )
     
     save_results_as_npz(observed_distance_matrix, p_values, p_values_corrected, permuted_distances, distance_output_dir)
