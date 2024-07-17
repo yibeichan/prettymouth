@@ -51,6 +51,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -66,30 +67,17 @@
 │   ├── 03_get_coflt_LOO.sh
 │   ├── 03_get_coflt_PW.py
 │   ├── 03_get_coflt_PW.sh
-│   ├── 03_get_coflt_per_parcel_LOO.py
-│   ├── 03_get_coflt_per_parcel_LOO.sh
-│   ├── 03_get_coflt_per_subject.py
-│   ├── 03_get_coflt_per_subject.sh
-│   ├── 04_eFC.ipynb
-│   ├── 04_get_eFC.py
-│   ├── 04_get_eFC.sh
-│   ├── 04_get_eFC_type.py
-│   ├── 04_get_eFC_type.sh
-│   ├── 04_get_rms_group.py
-│   ├── 04_get_rms_group.sh
-│   ├── 04_get_rms_per_subject.py
-│   ├── 04_get_rms_per_subject.sh
 │   ├── 04_group_distance_parcel.py
 │   ├── 04_group_distance_parcel.sh
-│   ├── 04_group_distance_perm.py
-│   ├── 04_group_distance_perm.sh
+│   ├── 04_group_distance_perm_ntw.py
+│   ├── 04_group_distance_perm_ntw.sh
+│   ├── 04_group_distance_perm_parcel.py
+│   ├── 04_group_distance_perm_parcel.sh
+│   ├── 04_group_distance_perm_roi.py
+│   ├── 04_group_distance_perm_roi.sh
 │   ├── 04_permutated_coflt_diff.ipynb
 │   ├── 04_permutation_coflt_diff_LOO.py
 │   ├── 04_permutation_coflt_diff_LOO.sh
-│   ├── 05_get_eFC_per_event.py
-│   ├── 05_get_eFC_per_event.sh
-│   ├── 05_get_eFC_type_per_event.py
-│   ├── 05_get_eFC_type_per_event.sh
 │   ├── 07_get_sim_mtx.py
 │   ├── 07_get_sim_mtx.sh
 │   ├── __init__.py
@@ -98,8 +86,8 @@
 │   │   ├── 01_behav_proc.py
 │   │   ├── 01_behav_proc02.ipynb
 │   │   ├── 01_behav_proc_draft.ipynb
-│   │   ├── get_character.py
-│   │   └── new_behav.ipynb
+│   │   ├── __init__.py
+│   │   └── get_character.py
 │   └── utils
 │       ├── __init__.py
 │       ├── coflt.py
@@ -132,6 +120,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 72 files
+5 directories, 59 files
 ```
 <!-- TREE_END -->
