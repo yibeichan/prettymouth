@@ -115,29 +115,31 @@ def get_reconstructed_rms(matrix: np.ndarray, name_idx_dict: dict) -> np.ndarray
 
     return rms_matrix
 
-def reconstruct_matrix(matrix: np.ndarray, name_idx_dict: Dict[str, List[int]]) -> np.ndarray:
+def reconstruct_matrix(matrix: np.ndarray, name_idx_dict: Dict[str, List[int]]) -> Tuple[np.ndarray, Dict[Tuple[int, int], Tuple[str, str]]]:
     """
     Reconstructs a matrix by calculating the mean of specific elements from the original matrix based on the name-index mappings.
+    Also returns a map of the new indices to the original keys.
 
     Args:
         matrix (np.ndarray): The original matrix with shape (n_subjs, n_ROIs, n_ROIs, n_TRs).
         name_idx_dict (dict): A dictionary that maps names to indices.
 
     Returns:
-        np.ndarray: The reconstructed matrix with shape (n_subjs, n_keys, n_keys, n_TRs).
+        Tuple[np.ndarray, Dict[Tuple[int, int], Tuple[str, str]]]: 
+            - The reconstructed matrix with shape (n_subjs, n_keys, n_keys, n_TRs).
+            - A dictionary mapping new matrix indices to the corresponding keys.
     """
     print("Reconstructing matrix...", matrix.shape)
     n_subjs, _, _, n_TRs = matrix.shape
     n_keys = len(name_idx_dict)
 
     new_matrix = np.zeros((n_subjs, n_keys, n_keys, n_TRs))
+    index_key_map = {}
 
     for i, k1 in enumerate(name_idx_dict.keys()):
         for j, k2 in enumerate(name_idx_dict.keys()):
             idx1 = name_idx_dict[k1]
-            # print(k1, idx1)
             idx2 = name_idx_dict[k2]
-            # print(k2, idx2)
             idx1_grid, idx2_grid = np.meshgrid(idx1, idx2, indexing='ij')
             print("Index grid shape:", idx1_grid.shape, idx2_grid.shape)
             sliced_matrix = matrix[:, idx1_grid, idx2_grid, :]
@@ -146,8 +148,11 @@ def reconstruct_matrix(matrix: np.ndarray, name_idx_dict: Dict[str, List[int]]) 
             print("Mean values shape:", mean_values.shape)
             new_matrix[:, i, j, :] = mean_values
 
+            # Add to the index-key map
+            index_key_map[(i, j)] = (k1, k2)
+
     print("Reconstructed matrix shape:", new_matrix.shape)
-    return new_matrix
+    return new_matrix, index_key_map
     
 def extract_upper_triangle(matrix: np.ndarray) -> np.ndarray:
     """
