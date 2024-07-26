@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=128G
-#SBATCH --time=24:00:00
+#SBATCH --time=15:00:00
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=yibei@mit.edu
 
