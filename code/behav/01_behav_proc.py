@@ -122,21 +122,21 @@ def map_boundary2seg(seg_df, boundaries, filepath):
 
     for i, r in enumerate(boundaries):
         if i == 0:  # First iteration
-            seg_index = seg_df[seg_df['onset_TRs'] == r].index[-1]
+            seg_index = seg_df[seg_df['onset_TRs'] < r].index[-1]
             seg = seg_df.iloc[:seg_index]['Seg'].tolist()
         elif i == len(boundaries) - 1:  # Last iteration
             prev_r = boundaries[i-1]
-            prev_seg_index = seg_df[seg_df['onset_TRs'] == prev_r].index[-1]
+            prev_seg_index = seg_df[seg_df['onset_TRs'] <= prev_r].index[-1]
             seg = seg_df.iloc[prev_seg_index:]['Seg'].tolist()
         else:  # Subsequent iterations
             prev_r = boundaries[i-1]
-            prev_seg_index = seg_df[seg_df['onset_TRs'] == prev_r].index[-1]
-            seg_index = seg_df[seg_df['onset_TRs'] == r].index[-1]
+            prev_seg_index = seg_df[seg_df['onset_TRs'] <= prev_r].index[-1]
+            seg_index = seg_df[seg_df['onset_TRs'] < r].index[-1]
             seg = seg_df.iloc[prev_seg_index:seg_index]['Seg'].tolist()
 
-        result.append({'boundary': r, 'segments': seg[0]})
-
+        result.append({'boundary': r, 'segments': " ".join(seg)})
     pd.DataFrame(result).to_csv(filepath, index=False)
+    print(f"Segments saved to {filepath}")
 
 def map_boundary2word(word_df,boundaries, filepath):
     events = []
@@ -145,21 +145,24 @@ def map_boundary2word(word_df,boundaries, filepath):
         end = word_df["TR"].max() if i == len(boundaries)-1 else n
         text = " ".join(word_df.loc[(word_df["TR"] >= start) & (word_df["TR"] <= end), "text"].values)
         events.append({"start_TR": start, "end_TR": end, "text": text})
-    event_df = pd.DataFrame(events)
-    event_df.to_csv(filepath, index=False)
+    pd.DataFrame(events).to_csv(filepath, index=False)
+    print(f"Events saved to {filepath}")
 
 def process_thresholds(threshold_list, agree_tr_df, output_prefix, word_df, seg_df, output_dir, filtered=False):
     peaks_info = []
     
     for th in threshold_list:
         prominent_peaks, _ = find_peaks(agree_tr_df['agreement'], prominence=th)
-        logging.info(f"There are {len(prominent_peaks)} prominent (threshold = {th}) peaks in {output_prefix}")
+        print(f"There are {len(prominent_peaks)} prominent (threshold = {th}) peaks in {output_prefix}")
+        
+        formatted_th = f"{th:.2f}".replace('.', '')
         
         # Save the prominent peaks to a text file
-        np.savetxt(os.path.join(output_dir, f"prominent_peaks_{output_prefix}_{int(th*100):03}.txt"), prominent_peaks, fmt='%d')
+        np.savetxt(os.path.join(output_dir, f"prominent_peaks_{output_prefix}_{formatted_th}.txt"), prominent_peaks, fmt='%d')
         
         # Create the filepath for the event dataframe CSV
-        filepath = os.path.join(output_dir, f"event_df_prom_{output_prefix}_{int(th*100):03}.csv")
+        filepath = os.path.join(output_dir, f"event_df_prom_{output_prefix}_{formatted_th}.csv")
+        print(f"setup event dataframe at {filepath}")
         
         # Determine boundaries and append the final TR value
         boundaries = agree_tr_df['TR'].iloc[prominent_peaks].tolist()
@@ -250,11 +253,12 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     word_df["TR"] = word_df["onset"].apply(lambda x: np.round(x/1.5)).astype(int)
 
     th = np.around(agree_TR_df1['agreement'].quantile(0.85), decimals=2)
+    th2 = np.around(agree_TR_df1['agreement'].quantile(0.95), decimals=2)
     th_filtered = np.around(agree_TR_df1_filtered['agreement'].quantile(0.85), decimals=2)
+    th_filtered2 = np.around(agree_TR_df1_filtered['agreement'].quantile(0.95), decimals=2)
 
-    th_lst = [round(th, 2) for th in np.arange(th-0.05, th+0.1, 0.01)]
-    th_filtered_lst = [round(th_filtered, 2) for th_filtered in np.arange(th_filtered-0.05, th_filtered+0.1, 0.01)]
-
+    th_lst = [round(t, 2) for t in np.arange(th-0.05, th2, 0.01)]
+    th_filtered_lst = [round(t, 2) for t in np.arange(th_filtered-0.05, th_filtered2, 0.01)]
 
     peak_th = process_thresholds(th_lst, agree_TR_df1, "eventseg", word_df, seg_df, output_dir, filtered=False)
     peak_th_filtered = process_thresholds(th_filtered_lst, agree_TR_df1_filtered, "eventseg_filtered", word_df, seg_df, output_dir, filtered=True)
@@ -276,16 +280,17 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
 if __name__ == '__main__':
     logging.info("Loading environment variables")
     load_dotenv()
-    base_dir = os.getenv("SCRATCH_DIR")
+    base_dir = os.getenv("BASE_DIR")
+    scratch_dir = os.getenv("SCRATCH_DIR")
     
     if not base_dir:
         logging.error("BASE_DIR environment variable not set")
         raise EnvironmentError("BASE_DIR environment variable not set")
 
-    data_dir = os.path.join(base_dir, "data")
+    data_dir = os.path.join(scratch_dir, "data")
     behav_dir = os.path.join(data_dir, "behav")
     stimuli_dir = os.path.join(data_dir, "stimuli")
-    output_dir = os.path.join(base_dir, "output", "behav_results")
+    output_dir = os.path.join(scratch_dir, "output", "behav_results")
     os.makedirs(output_dir, exist_ok=True)
 
     stimuli_file1 = os.path.join(stimuli_dir, "word_by_onset.csv")
