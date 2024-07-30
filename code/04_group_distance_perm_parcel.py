@@ -14,7 +14,6 @@ def monitor_memory():
     mem_info = process.memory_info()
     return mem_info.rss / (1024 ** 3)  # Convert to GB
 
-@profile
 def calculate_distance_matrix(group1_avg, group2_avg, indices):
     distance_matrix = np.zeros((group1_avg.shape[0], group1_avg.shape[1]), dtype=np.float32)
     for i, j in zip(*indices):
