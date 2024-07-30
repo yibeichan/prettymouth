@@ -156,16 +156,17 @@ def process_thresholds(threshold_list, agree_tr_df, output_prefix, word_df, seg_
         print(f"There are {len(prominent_peaks)} prominent (threshold = {th}) peaks in {output_prefix}")
         
         formatted_th = f"{th:.2f}".replace('.', '')
-        
-        # Save the prominent peaks to a text file
-        np.savetxt(os.path.join(output_dir, f"prominent_peaks_{output_prefix}_{formatted_th}.txt"), prominent_peaks, fmt='%d')
-        
+
         # Create the filepath for the event dataframe CSV
-        filepath = os.path.join(output_dir, f"event_df_prom_{output_prefix}_{formatted_th}.csv")
+        filepath = os.path.join(output_dir, f"event_df_prom{output_prefix}_{formatted_th}.csv")
         print(f"setup event dataframe at {filepath}")
         
         # Determine boundaries and append the final TR value
         boundaries = agree_tr_df['TR'].iloc[prominent_peaks].tolist()
+
+        # Save the prominent peaks to a text file
+        np.savetxt(os.path.join(output_dir, f"prominent_peaks{output_prefix}_{formatted_th}.txt"), boundaries, fmt='%d')
+        
         boundaries.append(465.0)
         
         if not filtered:
@@ -260,8 +261,8 @@ def main(df1, df2a, df2b, word_df, seg_df, output_dir):
     th_lst = [round(t, 2) for t in np.arange(th-0.05, th2, 0.01)]
     th_filtered_lst = [round(t, 2) for t in np.arange(th_filtered-0.05, th_filtered2, 0.01)]
 
-    peak_th = process_thresholds(th_lst, agree_TR_df1, "eventseg", word_df, seg_df, output_dir, filtered=False)
-    peak_th_filtered = process_thresholds(th_filtered_lst, agree_TR_df1_filtered, "eventseg_filtered", word_df, seg_df, output_dir, filtered=True)
+    peak_th = process_thresholds(th_lst, agree_TR_df1, "", word_df, seg_df, output_dir, filtered=False)
+    peak_th_filtered = process_thresholds(th_filtered_lst, agree_TR_df1_filtered, "_filtered", word_df, seg_df, output_dir, filtered=True)
 
     # Convert the lists to NumPy arrays
     peak_th_array = np.array(peak_th, dtype=[('threshold', 'f4'), ('n_peaks', 'i4')])
