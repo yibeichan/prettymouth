@@ -52,6 +52,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -76,8 +77,12 @@
 │   ├── 04_group_distance_perm_roi.py
 │   ├── 04_group_distance_perm_roi.sh
 │   ├── 04_permutated_coflt_diff.ipynb
-│   ├── 04_permutation_coflt_diff_LOO.py
 │   ├── 04_permutation_coflt_diff_LOO.sh
+│   ├── 05_event_group_distance_perm_ntw.py
+│   ├── 05_event_group_distance_perm_ntw.sh
+│   ├── 05_event_group_distance_perm_parcel.py
+│   ├── 05_event_group_distance_perm_roi.py
+│   ├── 05_event_group_distance_perm_roi.sh
 │   ├── 07_get_sim_mtx.py
 │   ├── 07_get_sim_mtx.sh
 │   ├── __init__.py
@@ -86,6 +91,7 @@
 │   │   ├── 01_behav_proc.py
 │   │   ├── 01_behav_proc02.ipynb
 │   │   ├── 01_behav_proc_draft.ipynb
+│   │   ├── 02_group_diff.ipynb
 │   │   ├── __init__.py
 │   │   └── get_character.py
 │   └── utils
@@ -120,6 +126,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 59 files
+5 directories, 64 files
 ```
 <!-- TREE_END -->
