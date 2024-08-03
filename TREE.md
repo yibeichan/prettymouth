@@ -37,7 +37,8 @@
 │   │   ├── 01_behav_proc_draft.ipynb
 │   │   ├── 02_group_diff.ipynb
 │   │   ├── __init__.py
-│   │   └── get_character.py
+│   │   ├── get_character.py
+│   │   └── plot.ipynb
 │   └── utils
 │       ├── __init__.py
 │       ├── coflt.py
@@ -70,5 +71,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-5 directories, 64 files
+5 directories, 65 files
 ```
