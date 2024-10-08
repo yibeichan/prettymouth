@@ -7,7 +7,6 @@ import os
 import glob
 import numpy as np
 from sklearn.model_selection import LeaveOneOut
-from sklearn.decomposition import PCA
 from hmmlearn import hmm
 import matplotlib.pyplot as plt
 from dotenv import load_dotenv
@@ -44,9 +43,8 @@ def fit_model_with_multiple_inits(train_seq, test_seq, train_lengths, test_lengt
     return best_model, best_score
 
 @profile
-def load_network_data(network):
-    data_dir = "/nese/mit/group/sig/projects/yibei/prettymouth/output/network_data"
-    files = glob.glob(os.path.join(data_dir, f"*{network}*.npy"))
+def load_network_data(network, network_data_dir):
+    files = glob.glob(os.path.join(network_data_dir, f"*{network}*.npy"))
     all_data = []
     for file in files:
         data = np.load(file)
@@ -54,8 +52,8 @@ def load_network_data(network):
     return np.array(all_data)
 
 @profile
-def process_network(network_name, data_pca, n_components, n_subj, n_TR, n_components_pca, n_params, covariance_type='full', random_state=42):
-    print(f"\nProcessing network: {network_name}, n_components: {n_components}")
+def process_network(network, data, n_components, n_subj, n_TR, n_parcel, n_params, covariance_type='full', random_state=42):
+    print(f"\nProcessing network: {network}, n_components: {n_components}")
     
     # Prepare Leave-One-Out cross-validation
     loo = LeaveOneOut()
@@ -69,12 +67,12 @@ def process_network(network_name, data_pca, n_components, n_subj, n_TR, n_compon
     }
     
     for train_index, test_index in loo.split(range(n_subj)):
-        train_data = data_pca[train_index]
-        test_data = data_pca[test_index]
+        train_data = data[train_index]
+        test_data = data[test_index]
         
         # Reshape data for HMM
-        train_seq = train_data.reshape(-1, n_components_pca)
-        test_seq = test_data.reshape(-1, n_components_pca)
+        train_seq = train_data.reshape(-1, n_parcel)
+        test_seq = test_data.reshape(-1, n_parcel)
         train_lengths = [n_TR] * len(train_index)
         test_lengths = [n_TR]
         
@@ -100,19 +98,12 @@ def process_network(network_name, data_pca, n_components, n_subj, n_TR, n_compon
     return results
 
 @profile
-def run_parallel_hmm(network_name, all_data, n_components_range, covariance_type='full', random_state=42):
+def run_parallel_hmm(network, all_data, n_components_range, save_dir, covariance_type='full', random_state=42):
     data = all_data[:, :, 17:468]  # Consider making these indices parameters
     n_subj, n_parcel, n_TR = data.shape
     
-    # Apply PCA
-    pca = PCA(n_components=0.95)  # Retain 95% of variance
-    data_flat = data.reshape(n_subj * n_TR, n_parcel)
-    data_pca = pca.fit_transform(data_flat)
-    n_components_pca = data_pca.shape[1]
-    print(f"Number of PCA components: {n_components_pca}")
-    
-    # Reshape data back to (n_subj, n_TR, n_components_pca)
-    data_pca = data_pca.reshape(n_subj, n_TR, n_components_pca)
+    data_reshaped = data.transpose(0, 2, 1)
+    print(f"Reshaped data shape: {data_reshaped.shape}")
     
     # num_cores = multiprocessing.cpu_count()
     num_cores = 16
@@ -120,22 +111,42 @@ def run_parallel_hmm(network_name, all_data, n_components_range, covariance_type
     
     results = []
     for n_components in n_components_range:
+        n_components = int(n_components)  # Ensure n_components is an integer
+        # Check if results for this n_components already exist
+        result_file = os.path.join(save_dir, f"{network}_hmm_results_{n_components:03d}.npy")
+        if os.path.exists(result_file):
+            print(f"Results for n_components={n_components} already exist. Skipping.")
+            results.append(np.load(result_file, allow_pickle=True).item())
+            continue
+        
         n_params = (
-            n_components * (n_components - 1) +
-            n_components - 1 +
-            n_components * n_components_pca +
-            n_components * n_components_pca * (n_components_pca + 1) / 2
+            n_components * (n_components - 1) +  # Transition probabilities
+            n_components - 1 +  # Initial state probabilities
+            n_components * n_parcel +  # Means
+            n_components * n_parcel * (n_parcel + 1) / 2  # Covariances
         )
-        partial_process = partial(process_network, network_name, data_pca, n_components, n_subj, n_TR, n_components_pca, n_params, covariance_type=covariance_type, random_state=random_state)
-        results.append(pool.apply_async(partial_process))
+        partial_process = partial(process_network, network, data_reshaped, n_components, n_subj, n_TR, n_parcel, n_params, covariance_type=covariance_type, random_state=random_state)
+        result = pool.apply_async(partial_process)
+        results.append(result)
     
     pool.close()
     pool.join()
     
-    return [r.get() for r in results]
+    final_results = []
+    for i, result in enumerate(results):
+        if isinstance(result, dict):  # Already loaded result
+            final_results.append(result)
+        else:  # AsyncResult object
+            result_dict = result.get()
+            final_results.append(result_dict)
+            # Save individual result
+            n_components = int(result_dict['n_components'])
+            np.save(os.path.join(save_dir, f"{network}_hmm_results_{n_components:03d}.npy"), result_dict)
+    
+    return final_results
 
 @profile
-def plot_results(network_name, results, save_dir):
+def plot_results(network, results, save_dir):
     avg_metrics = {
         'n_components': sorted(set(results['n_components'])),
         'mean_log_likelihood': [],
@@ -154,13 +165,13 @@ def plot_results(network_name, results, save_dir):
     plt.plot(avg_metrics['n_components'], avg_metrics['mean_BIC'], label='BIC')
     plt.xlabel('Number of Hidden States')
     plt.ylabel('Metric Value')
-    plt.title(f'Model Selection Metrics for {network_name}')
+    plt.title(f'Model Selection Metrics for {network}')
     plt.legend()
-    plt.savefig(os.path.join(save_dir, f"{network_name}_hmm_model_selection.png"))
+    plt.savefig(os.path.join(save_dir, f"{network}_hmm_model_selection.png"))
     
     optimal_idx = np.argmin(avg_metrics['mean_BIC'])
     optimal_n_components = avg_metrics['n_components'][optimal_idx]
-    print(f"Optimal number of hidden states for {network_name}: {optimal_n_components}")
+    print(f"Optimal number of hidden states for {network}: {optimal_n_components}")
     
     return optimal_n_components
 
@@ -169,7 +180,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--network", type=str, required=True)
     args = parser.parse_args()
-    network_name = args.network
+    network = args.network
     
     nese_dir = os.getenv("NESE_DIR")        
     if nese_dir is None:
@@ -179,9 +190,9 @@ if __name__ == "__main__":
     save_dir = os.path.join(nese_dir, "output", "hmm_results", "level1", "all_subj")
     os.makedirs(save_dir, exist_ok=True)
 
-    n_components_range = range(3, 26)
-    all_data = load_network_data(network_name)
-    results = run_parallel_hmm(network_name, all_data, n_components_range)
+    n_components_range = range(3, 27)
+    all_data = load_network_data(network, network_data_dir)
+    results = run_parallel_hmm(network, all_data, n_components_range, save_dir)
     
     # Combine results from all parallel processes
     combined_results = {
@@ -192,10 +203,11 @@ if __name__ == "__main__":
         'BIC': []
     }
     for r in results:
+        n_components = int(r['n_components'])
         for key in combined_results.keys():
-            combined_results[key].extend(r[key] if key != 'n_components' else [r[key]] * len(r['subject']))
+            combined_results[key].extend(r[key] if key != 'n_components' else [n_components] * len(r['subject']))
     
-    optimal_n_components = plot_results(network_name, combined_results, save_dir)
+    optimal_n_components = plot_results(network, combined_results, save_dir)
     # save results and optimal_n_components
-    np.save(os.path.join(save_dir, f"{network_name}_hmm_results.npy"), combined_results)
-    np.save(os.path.join(save_dir, f"{network_name}_hmm_optimal_n_components.npy"), optimal_n_components)
+    np.save(os.path.join(save_dir, f"{network}_hmm_results.npy"), combined_results)
+    np.save(os.path.join(save_dir, f"{network}_hmm_optimal_n_components.npy"), optimal_n_components)
