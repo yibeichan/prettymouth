@@ -116,3 +116,59 @@ def get_roi_and_network_ids(parcellation: Dict, n_parcel: int) -> Tuple[Dict, Di
     print(f"Number of networks: {len(networknames_idx_dict)}")
 
     return roinames_idx_dict, roinames_ntw_idx_dict, roinames_hem_idx_dict, networknames_idx_dict
+
+
+def match_grayordinates(parcellation, substrings):
+    """
+    Returns the grayordinate indices in 'map_all' that correspond to the labels matching the given patterns.
+    
+    - If 'substrings' is a single string or a list with one element, performs an exact match.
+    - If 'substrings' is a list with multiple elements, matches labels containing all substrings.
+    
+    Parameters:
+    - parcellation: dict
+        A dictionary with the following keys:
+            - 'labels': list or array of label strings.
+            - 'map_all': array of label indices corresponding to each grayordinate.
+    - substrings: str or list of str
+        A string or list of strings to search for within the labels.
+    
+    Returns:
+    - matching_grayordinates: numpy.ndarray
+        Indices of the grayordinates that correspond to the matching labels.
+    """
+    
+    labels = parcellation['labels']
+    map_all = parcellation['map_all']
+    
+    # Ensure 'substrings' is a list for uniform processing
+    if isinstance(substrings, str):
+        substrings = [substrings]
+    elif isinstance(substrings, (list, tuple, np.ndarray)):
+        substrings = list(substrings)
+    else:
+        raise ValueError("substrings must be a string or a list of strings.")
+    
+    if len(substrings) == 1:
+        # Exact match when only one substring is provided
+        target_label = substrings[0]
+        mask = np.array(labels) == target_label
+    else:
+        # Substring match: label must contain all substrings
+        mask = np.ones(len(labels), dtype=bool)
+        for substring in substrings:
+            # Update mask to retain labels containing the current substring
+            mask &= np.char.find(labels, substring) != -1
+    
+    # Get the indices of labels that match the criteria
+    matched_label_indices = np.where(mask)[0]
+    
+    # Find grayordinates in 'map_all' that correspond to the matched label indices
+    # 'map_all' contains label indices for each grayordinate
+    matching_grayordinates = np.where(np.isin(map_all, matched_label_indices))[0]
+    
+    return matching_grayordinates
+
+def get_roi(group_data, parcellation, strings):
+    roi_index = match_grayordinates(parcellation, strings)
+    return group_data[:, :, roi_index], roi_index

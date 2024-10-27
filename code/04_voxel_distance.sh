@@ -13,6 +13,6 @@
 #SBATCH --mail-user=yibei@mit.edu
 
 source $HOME/miniconda3/etc/profile.d/conda.sh
-conda activate prettymouth2
+conda activate prettymouth
 
 python 04_voxel_distance.py
