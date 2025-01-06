@@ -53,7 +53,7 @@ class BrainStateAnalysis:
         logger.setLevel(logging.INFO)
         
         # Create logs directory
-        self.output_dir = self.base_dir / "group_HMM_comparison"
+        self.output_dir = self.base_dir / "09_group_HMM_comparison"
         self.output_dir.mkdir(exist_ok=True)
         log_dir = self.output_dir / "logs"
         log_dir.mkdir(exist_ok=True)
@@ -540,25 +540,39 @@ class StateVisualization:
         
     def create_main_figure(self):
         """Create main summary figure for publication"""
-        fig = plt.figure(figsize=(15, 12))
-        gs = GridSpec(3, 3, figure=fig)
+        fig = plt.figure(figsize=(15, 18))  # Increased figure height
         
-        # 1. State Pattern Similarity (top-left)
-        ax_sim = fig.add_subplot(gs[0, 0])
+        # Create GridSpec with adjusted height ratios
+        gs = GridSpec(7, 3, figure=fig, height_ratios=[1.2, 1.2, 1.8, 1.8, 1.8, 1.65, 1.65])
+        
+        # 1. Top row - make it taller (spans 2 rows)
+        ax_sim = fig.add_subplot(gs[0:2, 0])  # State Pattern Similarity
+        ax_prop = fig.add_subplot(gs[0:2, 1:])  # State Properties
+        
+        # 2. Middle - Time series (spans 3 rows)
+        ax_temp1 = fig.add_subplot(gs[2:3, :])
+        ax_temp2 = fig.add_subplot(gs[3:4, :], sharex=ax_temp1)
+        ax_temp3 = fig.add_subplot(gs[4:5, :], sharex=ax_temp1)
+
+        # Hide x-axis labels for top two time series plots
+        ax_temp1.set_xticklabels([])
+        ax_temp2.set_xticklabels([])
+        plt.setp(ax_temp1.get_xticklabels(), visible=False)
+        plt.setp(ax_temp2.get_xticklabels(), visible=False)
+
+        # Ensure ax_temp3 shows its xticklabels
+        ax_temp3.tick_params(axis='x', labelbottom=True)
+        
+        # 3. Bottom row - Transition matrices (spans 2 rows)
+        ax_trans1 = fig.add_subplot(gs[5:7, 0])
+        ax_trans2 = fig.add_subplot(gs[5:7, 1])
+        ax_diff = fig.add_subplot(gs[5:7, 2])
+        
+        
+        # Plot all components
         self._plot_similarity_matrix(ax_sim)
-        
-        # 2. Temporal Dynamics (top-middle and right)
-        ax_temp = fig.add_subplot(gs[0, 1:])
-        self._plot_temporal_dynamics(ax_temp)
-        
-        # 3. State Properties (middle row)
-        ax_prop = fig.add_subplot(gs[1, :])
         self._plot_state_properties(ax_prop)
-        
-        # 4. Transition Matrices (bottom row)
-        ax_trans1 = fig.add_subplot(gs[2, 0])
-        ax_trans2 = fig.add_subplot(gs[2, 1])
-        ax_diff = fig.add_subplot(gs[2, 2])
+        self._plot_temporal_dynamics([ax_temp1, ax_temp2, ax_temp3])
         self._plot_transition_comparison(ax_trans1, ax_trans2, ax_diff)
         
         plt.tight_layout()
@@ -576,50 +590,57 @@ class StateVisualization:
                         vmin=0, 
                         vmax=1,
                         fmt='.2f',
-                        ax=ax)
+                        ax=ax,
+                        xticklabels=['S1', 'S2', 'S3'],
+                        yticklabels=['S1', 'S2', 'S3'])
         
         # Mark matched states
         for i, j in matched_states:
             ax.add_patch(plt.Rectangle((j, i), 1, 1, fill=False, 
-                                     edgecolor='red', lw=2))
+                                    edgecolor='red', lw=2))
         
         ax.set_title('State Pattern Similarity')
-        ax.set_xlabel('Paranoia States')
-        ax.set_ylabel('Affair States')
+        ax.set_xlabel('Paranoia')
+        ax.set_ylabel('Affair')
         
-    def _plot_temporal_dynamics(self, ax):
-        """Plot temporal evolution of states"""
+    def _plot_temporal_dynamics(self, axes):
+        """Plot temporal evolution of states - one subplot per state pair"""
         temporal_data = self.results['comparisons']['temporal_dynamics']
         matched_states = self.results['comparisons']['state_similarity']['matched_states']
         
         for idx, (affair_idx, paranoia_idx) in enumerate(matched_states):
+            ax = axes[idx]
             key = f'state_pair_{affair_idx}_{paranoia_idx}'
             profile = temporal_data[key]['temporal_profile']
             
-            # Plot affair profile
+            # Plot affair and paranoia profiles for this state
             ax.plot(profile['affair_profile'], 
-                   color=self.colors[idx], 
-                   label=f'Affair State {affair_idx+1}')
-            
-            # Plot paranoia profile
+                color=self.colors[idx], 
+                label='Affair')
             ax.plot(profile['paranoia_profile'], 
-                   color=self.colors[idx], 
-                   linestyle='--',
-                   alpha=0.7,
-                   label=f'Paranoia State {paranoia_idx+1}')
+                color=self.colors[idx], 
+                linestyle='--',
+                alpha=0.7,
+                label='Paranoia (Reordered)')
             
             # Add correlation annotation
             corr = profile['correlation']
-            ax.text(0.98, 0.98 - idx*0.1, 
-                   f'r = {corr:.2f}',
-                   transform=ax.transAxes,
-                   ha='right',
-                   va='top')
-        
-        ax.set_title('Temporal Dynamics')
-        ax.set_xlabel('Time (TRs)')
-        ax.set_ylabel('State Probability')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax.text(0.98, 0.98, 
+                f'r = {corr:.2f}',
+                transform=ax.transAxes,
+                ha='right',
+                va='top')
+            
+            ax.set_title(f'State {idx+1}')
+            
+            # Only show x-axis labels for the bottom plot
+            if idx < 2:  # For first two plots
+                ax.set_xticks([])
+            else:  # For the last plot
+                ax.set_xlabel('Time (TRs)')
+            
+            ax.set_ylabel('State Probability')
+            ax.legend()
         
     def _plot_state_properties(self, ax):
         """Plot comparison of state properties"""
@@ -628,37 +649,41 @@ class StateVisualization:
         
         n_pairs = len(matched_states)
         width = 0.35
+        x = np.arange(n_pairs)
         
-        # Plot occupancy and duration differences
+        # Define distinct colors for Occupancy and Duration
+        occ_color = '#1f77b4'  # blue
+        dur_color = '#ff7f0e'  # orange
+        
+        # Create bars
+        occ_bars = ax.bar(x - width/2, 
+                        [temporal_data[f'state_pair_{a}_{p}']['occupancy']['difference'] 
+                        for a, p in matched_states],
+                        width, label='Occupancy',
+                        color=occ_color)
+        
+        dur_bars = ax.bar(x + width/2,
+                        [temporal_data[f'state_pair_{a}_{p}']['duration']['affair_mean'] - 
+                        temporal_data[f'state_pair_{a}_{p}']['duration']['paranoia_mean']
+                        for a, p in matched_states],
+                        width, label='Duration',
+                        color=dur_color)
+        
+        # Add significance markers
         for idx, (affair_idx, paranoia_idx) in enumerate(matched_states):
             key = f'state_pair_{affair_idx}_{paranoia_idx}'
             metrics = temporal_data[key]
             
-            # Occupancy
-            occ_diff = metrics['occupancy']['difference']
-            ax.bar(idx - width/2, occ_diff, width, 
-                  label='Occupancy' if idx == 0 else '',
-                  color=self.colors[idx])
-            
-            # Duration
-            dur_diff = (metrics['duration']['affair_mean'] - 
-                       metrics['duration']['paranoia_mean'])
-            ax.bar(idx + width/2, dur_diff, width,
-                  label='Duration' if idx == 0 else '',
-                  color=self.colors[idx],
-                  alpha=0.7)
-            
-            # Add significance markers
             if metrics['occupancy']['ttest'].pvalue < 0.05:
-                ax.text(idx - width/2, occ_diff, '*',
-                       ha='center', va='bottom')
+                ax.text(idx - width/2, occ_bars[idx].get_height(), '*',
+                    ha='center', va='bottom')
             if metrics['duration']['ks_test'].pvalue < 0.05:
-                ax.text(idx + width/2, dur_diff, '*',
-                       ha='center', va='bottom')
-                
+                ax.text(idx + width/2, dur_bars[idx].get_height(), '*',
+                    ha='center', va='bottom')
+        
         ax.set_title('State Property Differences (Affair - Paranoia)')
-        ax.set_xticks(range(n_pairs))
-        ax.set_xticklabels([f'State {i+1}' for i in range(n_pairs)])
+        ax.set_xticks(x)
+        ax.set_xticklabels([f'S{i+1}' for i in range(n_pairs)])
         ax.legend()
         ax.axhline(y=0, color='k', linestyle='--', alpha=0.5)
         
@@ -670,27 +695,36 @@ class StateVisualization:
         im1 = ax1.imshow(trans_data['affair'], 
                         cmap='coolwarm', vmin=0, vmax=1)
         ax1.set_title('Affair Transitions')
-        self._format_transition_plot(ax1, im1)
+        self._format_transition_plot(ax1, im1, include_values=True)
         
         # Plot paranoia transitions (reordered)
         im2 = ax2.imshow(trans_data['paranoia_reordered'],
                         cmap='coolwarm', vmin=0, vmax=1)
         ax2.set_title('Paranoia Transitions\n(Reordered)')
-        self._format_transition_plot(ax2, im2)
+        self._format_transition_plot(ax2, im2, include_values=True)
         
         # Plot difference
         im3 = ax3.imshow(trans_data['difference'],
                         cmap='RdBu_r', vmin=-0.5, vmax=0.5)
         ax3.set_title('Difference\n(Affair - Paranoia)')
-        self._format_transition_plot(ax3, im3)
-        
-    def _format_transition_plot(self, ax, im):
+        self._format_transition_plot(ax3, im3, include_values=True)
+
+    def _format_transition_plot(self, ax, im, include_values=False):
         """Format transition matrix plot"""
         plt.colorbar(im, ax=ax)
         ax.set_xticks(range(3))
         ax.set_yticks(range(3))
-        ax.set_xticklabels([f'S{i+1}' for i in range(3)])
-        ax.set_yticklabels([f'S{i+1}' for i in range(3)])
+        ax.set_xticklabels(['S1', 'S2', 'S3'])
+        ax.set_yticklabels(['S1', 'S2', 'S3'])
+        
+        if include_values:
+            # Add numerical values in each cell
+            for i in range(3):
+                for j in range(3):
+                    value = im.get_array()[i, j]
+                    ax.text(j, i, f'{value:.2f}',
+                        ha='center', va='center',
+                        color='white' if abs(value) > 0.5 else 'black')
         
     def _save_figure(self, name):
         """Save figure with appropriate formatting"""

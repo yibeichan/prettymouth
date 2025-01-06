@@ -425,7 +425,7 @@ def main():
 
     scratch_dir = os.getenv('SCRATCH_DIR')
     base_dir = os.path.join(scratch_dir, 'output')
-    output_dir = os.path.join(base_dir, 'group_coact_pattern_comp')
+    output_dir = os.path.join(base_dir, '08_group_coact_pattern_comp')
     
     # Run analysis
     analyzer = GroupPatternComparison(base_dir)

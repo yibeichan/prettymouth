@@ -948,7 +948,7 @@ def main():
     
     # Set up paths
     base_path = Path(scratch_dir) / "output"
-    output_dir = base_path / f"{args.group}_state_patterns_{args.res}"
+    output_dir = base_path / f"07_{args.group}_state_patterns_{args.res}"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Set up logging
