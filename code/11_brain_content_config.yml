@@ -1,0 +1,84 @@
+# Brain State Analysis Configuration
+
+# Data paths
+data_paths:
+  # Story annotation files
+  annotations: "/orcd/scratch/bcs/001/yibei/prettymouth/data/stimuli/10_story_annotations_TR.csv"
+  # Brain state files
+  affair_states:
+    model: "/orcd/scratch/bcs/001/yibei/prettymouth/output/affair_hmm_3states_ntw_native_trimmed/models/affair_hmm_model.pkl"
+    sequences: "/orcd/scratch/bcs/001/yibei/prettymouth/output/affair_hmm_3states_ntw_native_trimmed/statistics/affair_state_sequences.npy"
+    metrics: "/orcd/scratch/bcs/001/yibei/prettymouth/output/affair_hmm_3states_ntw_native_trimmed/statistics/affair_metrics.pkl"
+  
+  paranoia_states:
+    model: "/orcd/scratch/bcs/001/yibei/prettymouth/output/paranoia_hmm_3states_ntw_native_trimmed/models/paranoia_hmm_model.pkl"
+    sequences: "/orcd/scratch/bcs/001/yibei/prettymouth/output/paranoia_hmm_3states_ntw_native_trimmed/statistics/paranoia_state_sequences.npy"
+    metrics: "/orcd/scratch/bcs/001/yibei/prettymouth/output/paranoia_hmm_3states_ntw_native_trimmed/statistics/paranoia_metrics.pkl"
+    
+  # Group comparison results
+  group_comparisons: "/orcd/scratch/bcs/001/yibei/prettymouth/output/09_group_HMM_comparison/comparisons.pkl"
+
+# Analysis parameters
+analysis_params:
+  # General parameters
+  n_states: 3
+  tr_duration: 1.5  # in seconds
+  
+  # Temporal analysis parameters
+  window_size: 5  # TRs before/after events
+  min_segment_length: 3  # minimum TRs for a valid segment
+  
+  # Statistical parameters
+  alpha_level: 0.05
+  fdr_method: "fdr_bh"  # Benjamini-Hochberg FDR correction
+  
+  # Feature analysis thresholds
+  majority_threshold: 0.5  # for binary feature decisions
+  min_samples: 10  # minimum samples required for statistical testing
+
+# Visualization parameters
+visualization:
+  # Plot settings
+  dpi: 300
+  figure_format: "png"
+  
+  # Color schemes
+  colors:
+    affair: "#2E86C1"
+    paranoia: "#C0392B"
+    arthur_mod: "#27AE60"
+    arthur_nomod: "#7DCEA0"
+    other_mod: "#E67E22"
+    other_nomod: "#F5B041"
+  
+  # Plot sizes
+  figsize:
+    single: [8, 6]
+    double: [12, 6]
+    large: [15, 10]
+
+# Output settings
+output:
+  base_dir: "/orcd/scratch/bcs/001/yibei/prettymouth/output/11_brain_content_analysis"
+  # Directory structure
+  results_dir: "results"
+  figures_dir: "figures"
+  logs_dir: "logs"
+  
+  # File naming
+  timestamp_format: "%Y%m%d_%H%M%S"
+  
+  # Results to save
+  save_intermediate: true  # save intermediate analysis results
+  compress_results: true   # compress large result files
+  
+  # Report settings
+  generate_summary: true
+  include_plots_in_summary: true
+  summary_format: "markdown"
+
+# Debug settings
+debug:
+  verbose: true
+  save_debug_info: true
+  print_progress: true
