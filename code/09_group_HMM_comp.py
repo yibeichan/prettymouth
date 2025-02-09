@@ -28,7 +28,7 @@ class BrainStateAnalysis:
     3. State transition analysis
     """
     
-    def __init__(self, base_dir=None):
+    def __init__(self):
         """
         Initialize analysis pipeline
         
@@ -179,7 +179,9 @@ class BrainStateAnalysis:
             self.logger.info("Running state transitions analysis...")
             self.analyze_state_transitions()
             
-            # Debug the structure before saving
+            self.logger.info("generating results report")
+            self.generate_results_report()
+            
             self.logger.info("Comparison results structure:")
             for key, value in self.results['comparisons'].items():
                 self.logger.info(f"Key: {key}")
@@ -493,6 +495,115 @@ class BrainStateAnalysis:
             self.logger.error(f"Error generating visualizations: {e}")
             raise
     
+    def generate_results_report(self):
+        """
+        Generate a comprehensive markdown report of analysis results.
+        
+        Returns:
+            str: Markdown formatted report text
+        """
+        self.logger.info("Generating results report")
+        
+        try:
+            report = ["# Brain State Analysis Results Report\n"]
+            report.append(f"Analysis completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            
+            # 1. State Pattern Similarity Results
+            report.append("## State Pattern Similarities\n")
+            sim_data = self.results['comparisons']['state_similarity']
+            sim_matrix = sim_data['similarity_matrix']
+            matched_states = sim_data['matched_states']
+            
+            report.append("### State Matching Results:")
+            for i, j in matched_states:
+                report.append(f"- Affair State {i+1} matches Paranoia State {j+1} (similarity: {sim_matrix[i,j]:.3f})")
+            report.append("")
+            
+            # 2. Temporal Dynamics Results
+            report.append("## Temporal Dynamics Analysis\n")
+            temp_data = self.results['comparisons']['temporal_dynamics']
+            
+            for state_pair, metrics in temp_data.items():
+                affair_idx, paranoia_idx = state_pair.split('_')[-2:]
+                report.append(f"### State Pair {int(affair_idx)+1}\n")
+                
+                # Occupancy statistics
+                occ = metrics['occupancy']
+                report.append("#### Occupancy Statistics:")
+                report.append(f"- Affair mean: {occ['affair_mean']:.3f}")
+                report.append(f"- Paranoia mean: {occ['paranoia_mean']:.3f}")
+                report.append(f"- Difference: {occ['difference']:.3f}")
+                report.append(f"- Statistical significance: t={occ['ttest'].statistic:.3f}, p={occ['ttest'].pvalue:.3f}\n")
+                
+                # Duration statistics
+                dur = metrics['duration']
+                report.append("#### Duration Statistics:")
+                report.append(f"- Affair mean duration: {dur['affair_mean']:.3f} TRs")
+                report.append(f"- Paranoia mean duration: {dur['paranoia_mean']:.3f} TRs")
+                report.append(f"- Distribution comparison: KS-test statistic={dur['ks_test'].statistic:.3f}, p={dur['ks_test'].pvalue:.3f}\n")
+                
+                # Temporal profile
+                temp = metrics['temporal_profile']
+                report.append("#### Temporal Profile:")
+                report.append(f"- Profile correlation: {temp['correlation']:.3f}\n")
+            
+            # 3. Transition Analysis Results
+            report.append("## State Transition Analysis\n")
+            trans_data = self.results['comparisons']['transitions']
+            
+            report.append("### Key Transition Differences:")
+            diff_matrix = trans_data['difference']
+            for i in range(3):
+                for j in range(3):
+                    if abs(diff_matrix[i,j]) > 0.1:  # Report substantial differences
+                        report.append(f"- State {i+1} → State {j+1}: {diff_matrix[i,j]:.3f} difference")
+            report.append("")
+            
+            # 4. Summary Statistics
+            report.append("## Summary Statistics\n")
+            
+            # Calculate overall state stability
+            affair_trans = trans_data['affair']
+            paranoia_trans = trans_data['paranoia_reordered']
+            
+            affair_stability = np.mean(np.diag(affair_trans))
+            paranoia_stability = np.mean(np.diag(paranoia_trans))
+            
+            report.append("### State Stability:")
+            report.append(f"- Affair condition: {affair_stability:.3f}")
+            report.append(f"- Paranoia condition: {paranoia_stability:.3f}\n")
+            
+            # Calculate average state durations
+            avg_durations = {}
+            for state_pair, metrics in temp_data.items():
+                state_num = int(state_pair.split('_')[-2]) + 1
+                dur = metrics['duration']
+                avg_durations[state_num] = {
+                    'affair': dur['affair_mean'],
+                    'paranoia': dur['paranoia_mean']
+                }
+            
+            report.append("### Average State Durations (TRs):")
+            for state, durations in avg_durations.items():
+                report.append(f"- State {state}:")
+                report.append(f"  * Affair: {durations['affair']:.2f}")
+                report.append(f"  * Paranoia: {durations['paranoia']:.2f}")
+            
+            # Join all report sections
+            report_text = "\n".join(report)
+            
+            # Save report to file
+            report_path = self.output_dir / "analysis_report.md"
+            with open(report_path, 'w') as f:
+                f.write(report_text)
+            
+            self.logger.info(f"Report saved to {report_path}")
+            return report_text
+            
+        except Exception as e:
+            self.logger.error(f"Error generating report: {e}")
+            raise
+
 class StateVisualization:
     """
     Visualization module for brain state analysis results.

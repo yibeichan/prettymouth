@@ -123,7 +123,7 @@ class DataProcessor:
         
         # Load and process data
         try:
-            data_path = self.output_dir / f"{group}_group_data.npy"
+            data_path = self.output_dir / f"{group}_grouped_parcel_data.npy"
             data = np.load(data_path)
         except FileNotFoundError:
             raise FileNotFoundError(f"Could not find data file: {data_path}")

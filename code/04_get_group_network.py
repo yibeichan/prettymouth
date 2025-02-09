@@ -72,7 +72,7 @@ class NetworkProcessor:
         network_df.to_csv(self.networks_dir / f"{group}_network_df.csv", index=False)
         
         # Load and validate data
-        data_path = self.atlas_masked_dir / f"{group}_group_data.npy"
+        data_path = self.atlas_masked_dir / f"{group}_grouped_parcel_data.npy"
         if not data_path.exists():
             raise FileNotFoundError(f"Data file not found: {data_path}")
             
