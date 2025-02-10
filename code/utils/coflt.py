@@ -2,6 +2,7 @@ import os
 import glob
 import numpy as np
 from typing import Tuple, Dict, List
+import numba as nb
 from scipy.stats import zscore
 from scipy.linalg import norm
 from scipy.spatial.distance import euclidean
@@ -19,6 +20,15 @@ def print_memory_usage(step: str):
 def cofluctuation(x, y):
     return zscore(x, nan_policy='omit') * zscore(y, nan_policy='omit')
 
+def is_symmetric(matrix, tol=1e-8):
+    return np.allclose(matrix, matrix.T, atol=tol, equal_nan=True)
+
+def make_sym(data):
+    transposed = np.transpose(data, (1, 0, 2))
+    np.add(data, transposed, out=data)
+    data /= 2
+    return data
+
 def process_coflt_file(file: str) -> np.ndarray:
     """
     Reads a numpy file and converts its data type to float32.
@@ -30,8 +40,8 @@ def process_coflt_file(file: str) -> np.ndarray:
         np.ndarray: The processed data with float32 data type.
     """
     data = np.load(file, mmap_mode='r')
-    data = data.astype(np.float32)
-    return data
+    data = data.astype(np.float32, copy=False)
+    return make_sym(data)
 
 def read_coflt_data(n_parcel: int, group_id: str, output_dir: str) -> np.ndarray:
     """
@@ -50,17 +60,15 @@ def read_coflt_data(n_parcel: int, group_id: str, output_dir: str) -> np.ndarray
     """
 
     file_pattern = os.path.join(output_dir, f"{n_parcel}parcel", group_id, "*.npy")
-    files = glob.glob(file_pattern)
-    files.sort()
+    files = sorted(glob.glob(file_pattern))
 
-    coflt = []
-    for file in files:
-        data = process_coflt_file(file)
-        coflt.append(data)
-    coflt = np.array(coflt)
+    coflt = np.empty((len(files), *np.load(files[0], mmap_mode='r').shape), dtype=np.float32)
+
+    for i, file in enumerate(files):
+        coflt[i] = process_coflt_file(file)
+    
     print("coflt shape:", coflt.shape)
-
-    assert len(coflt.shape) == 4, "The coflt should be 4D."
+    assert coflt.ndim == 4, "The coflt should be 4D."
     print_memory_usage("After reading coflt data")
     return coflt
 
