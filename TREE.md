@@ -14,12 +14,7 @@
 │   ├── 03_extract_parcels.py
 │   ├── 03_get_groups.py
 │   ├── 03_get_masked_group.py
-│   ├── 03_hhmm_l1_all.py
-│   ├── 03_hhmm_l1_all.sh
-│   ├── 03_hhmm_l1_group.py
-│   ├── 03_hhmm_l1_group.sh
 │   ├── 03_hmm_group.py
-│   ├── 03_hmm_subject.py
 │   ├── 04_extract_roi.py
 │   ├── 04_get_group_network.py
 │   ├── 04_get_group_roi.py
@@ -28,19 +23,10 @@
 │   ├── 04_voxel_distance.py
 │   ├── 04_voxel_distance.sh
 │   ├── 05_event_group_distance_perm_parcel.py
-│   ├── 05_group_hmm.py
-│   ├── 05_group_hmm.sh
 │   ├── 05_group_hmm_ntw_find_n_states.py
 │   ├── 05_group_hmm_ntw_find_n_states.sh
 │   ├── 05_group_hmm_roi_find_n_states.py
 │   ├── 05_group_hmm_roi_find_n_states.sh
-│   ├── 05_hhmm_l1_all.py
-│   ├── 05_hhmm_l1_all.sh
-│   ├── 06_TR_group_distance_perm_ntw.py
-│   ├── 06_TR_group_distance_perm_parcel.py
-│   ├── 06_TR_group_distance_perm_parcel.sh
-│   ├── 06_TR_group_distance_perm_parcel_pr.py
-│   ├── 06_TR_group_distance_perm_parcel_pr.sh
 │   ├── 06_combined_group_hmm_ntw.py
 │   ├── 06_combined_group_hmm_ntw.sh
 │   ├── 06_combined_group_hmm_roi.py
@@ -49,14 +35,6 @@
 │   ├── 06_single_group_hmm_ntw.sh
 │   ├── 06_single_group_hmm_roi.py
 │   ├── 06_single_group_hmm_roi.sh
-│   ├── 07_brain_beh_corr_aa.py
-│   ├── 07_brain_beh_corr_aa.sh
-│   ├── 07_brain_beh_corr_ap.py
-│   ├── 07_brain_beh_corr_ap.sh
-│   ├── 07_brain_beh_corr_pa.py
-│   ├── 07_brain_beh_corr_pa.sh
-│   ├── 07_brain_beh_corr_pp.py
-│   ├── 07_brain_beh_corr_pp.sh
 │   ├── 07_group_state_patterns.py
 │   ├── 08_group_coact_pattern_comp.py
 │   ├── 09_group_HMM_comp.py
@@ -110,5 +88,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 104 files
+6 directories, 82 files
 ```
