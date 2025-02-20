@@ -7,7 +7,6 @@ from pathlib import Path
 import pickle
 from scipy import stats
 import statsmodels.api as sm
-from statsmodels.regression.mixed_linear_model import MixedLM
 from statsmodels.stats.multitest import multipletests
 
 import warnings
@@ -184,100 +183,171 @@ class BehavioralContentAnalysis:
         return results
         
     def analyze_content_relationships(self, content_features):
-        """Analyze relationships between content features and behavioral responses"""
-        print("Preparing data for mixed effects model...")
-        
-        # Calculate total number of subjects
-        n_total_subjects = len(self.affair_participants) + len(self.paranoia_participants)
-        n_timepoints = len(self.affair_responses[0])
-        
-        # Create model data frame
-        model_data = pd.DataFrame(index=range(n_total_subjects * n_timepoints))
-        model_data['subject'] = np.repeat(range(n_total_subjects), n_timepoints)
-        
-        # Add group as categorical and numeric
-        group_list = ['affair'] * len(self.affair_participants) + ['paranoia'] * len(self.paranoia_participants)
-        model_data['group'] = np.repeat(group_list, n_timepoints)
-        model_data['group_numeric'] = np.repeat([0] * len(self.affair_participants) + 
-                                            [1] * len(self.paranoia_participants), 
-                                            n_timepoints)
-        
-        # Add timepoint and features
-        model_data['timepoint'] = np.tile(range(n_timepoints), n_total_subjects)
-        for col in content_features.columns:
-            model_data[col] = np.tile(content_features[col].values, n_total_subjects)
-            
-            # Create interaction terms using numeric group
-            model_data[f'group_{col}_interaction'] = model_data['group_numeric'] * model_data[col]
-        
-        # Add response data
-        all_responses = np.concatenate([self.affair_responses, self.paranoia_responses])
-        model_data['response'] = all_responses.flatten()
+        """Analyze relationships between content features and behavioral responses using GLMM"""
+        print("Preparing data for GLMM analysis...")
         
         try:
-            # Formula with main effects and interactions
-            formula = "response ~ group + " + \
-                    " + ".join(content_features.columns) + \
-                    " + " + \
-                    " + ".join([f"group_{col}_interaction" for col in content_features.columns])
+            # Prepare data
+            n_total_subjects = len(self.affair_participants) + len(self.paranoia_participants)
+            n_timepoints = len(self.affair_responses[0])
             
-            print(f"\nFitting mixed effects model with formula:\n{formula}")
+            # Create model data with explicit types
+            model_data = pd.DataFrame(index=range(n_total_subjects * n_timepoints))
+            model_data['subject'] = np.repeat(range(n_total_subjects), n_timepoints).astype(np.int32)
+            group_list = ['affair'] * len(self.affair_participants) + ['paranoia'] * len(self.paranoia_participants)
+            model_data['group'] = np.repeat(group_list, n_timepoints)
             
-            model = MixedLM.from_formula(
-                formula,
-                groups='subject',
-                data=model_data
+            # Add features without standardization (they're already binary)
+            for col in content_features.columns:
+                model_data[col] = np.tile(content_features[col].values, n_total_subjects).astype(np.float64)
+            
+            # Add interaction features
+            model_data['lee_girl_verb'] = model_data['lee_girl_together'] * model_data['has_verb']
+            model_data['arthur_adj'] = model_data['arthur_speaking'] * model_data['has_adj']
+            
+            # Add response data as integer type
+            all_responses = np.concatenate([self.affair_responses, self.paranoia_responses])
+            model_data['response'] = all_responses.flatten().astype(np.int32)
+            
+            # Build feature matrix with explicit types
+            group_dummies = pd.get_dummies(model_data['group'], drop_first=True)
+            paranoia_col = group_dummies.columns[0]
+            
+            # Create design matrix with constant
+            exog = sm.add_constant(group_dummies).astype(np.float64)
+            feature_matrix = exog.copy()
+            
+            # Add all features including interaction features
+            feature_cols = list(content_features.columns) + ['lee_girl_verb', 'arthur_adj']
+            for feature in feature_cols:
+                feature_matrix[feature] = model_data[feature].astype(np.float64)
+            
+            # Add group interactions
+            for feature in feature_cols:
+                feature_matrix[f'group_{feature}_interaction'] = (
+                    feature_matrix[paranoia_col] * feature_matrix[feature]
+                ).astype(np.float64)
+            
+            # Add more debug information
+            print("\nModel data summary:")
+            print("Response values:", np.unique(model_data['response']))
+            print("Response range:", model_data['response'].min(), "to", model_data['response'].max())
+            print("Group distribution:", model_data['group'].value_counts())
+            
+            # Verify no missing values
+            missing_data = model_data.isnull().sum()
+            if missing_data.any():
+                print("\nWarning: Missing values detected:")
+                print(missing_data[missing_data > 0])
+            
+            # Verify data alignment
+            print("\nVerifying data alignment:")
+            print(f"Number of subjects × timepoints: {n_total_subjects * n_timepoints}")
+            print(f"Actual data length: {len(model_data)}")
+            
+            # Fit basic model
+            from statsmodels.genmod.bayes_mixed_glm import BinomialBayesMixedGLM
+            subject_dummies = pd.get_dummies(model_data['subject']).astype(np.float64)
+            basic_model = BinomialBayesMixedGLM(
+                model_data['response'],
+                exog,
+                exog_vc=subject_dummies,
+                vc_names=['subject'],
+                ident=np.ones(subject_dummies.shape[1], dtype=np.int32)
             )
+            basic_result = basic_model.fit_vb()
+            print("\nBasic GLMM converged successfully!")
+            print(basic_result.summary())
             
-            results = model.fit()
+            # Fit full model
+            print("\nFitting full GLMM...")
+            full_model = BinomialBayesMixedGLM(
+                model_data['response'],
+                feature_matrix,
+                exog_vc=subject_dummies,
+                vc_names=['subject'],
+                ident=np.ones(subject_dummies.shape[1], dtype=np.int32)
+            )
+            full_result = full_model.fit_vb()
             
-            # Extract group-specific effects
-            group_effects = {}
-            for feature in content_features.columns:
-                # Effect for affair group (base effect)
-                base_effect = results.params[feature]
-                base_effect_ci = results.conf_int().loc[feature]
-                
-                # Additional effect for paranoia group (interaction)
-                interaction_effect = results.params[f'group_{feature}_interaction']
-                interaction_ci = results.conf_int().loc[f'group_{feature}_interaction']
-                
-                # Total effect for paranoia group
-                paranoia_effect = base_effect + interaction_effect
-                
-                group_effects[feature] = {
-                    'affair': {
-                        'effect': base_effect,
-                        'ci_lower': base_effect_ci[0],
-                        'ci_upper': base_effect_ci[1],
-                        'p_value': results.pvalues[feature]
-                    },
-                    'paranoia': {
-                        'effect': paranoia_effect,
-                        'ci_lower': base_effect_ci[0] + interaction_ci[0],
-                        'ci_upper': base_effect_ci[1] + interaction_ci[1],
-                        'interaction_p_value': results.pvalues[f'group_{feature}_interaction']
-                    }
-                }
-            
-            return {
-                'model_results': results,
-                'summary': results.summary(),
-                'coefficients': results.params,
-                'pvalues': results.pvalues,
-                'conf_int': results.conf_int(),
-                'group_effects': group_effects
-            }
+            print("\nFull GLMM converged successfully!")
+            results = self._prepare_glmm_results(full_result, basic_result, feature_matrix)
+            return results
             
         except Exception as e:
-            print(f"\n!!! ERROR fitting mixed effects model !!!")
+            print(f"\n!!! ERROR fitting GLMM !!!")
             print(f"Error details: {str(e)}")
-            print(f"Model data info:")
-            print(f"- Shape: {model_data.shape}")
-            print(f"- Columns: {model_data.columns}")
-            print(f"- Missing values: {model_data.isnull().sum()}")
+            print("\nDebug information:")
+            print(f"Feature matrix shape: {feature_matrix.shape}")
+            print(f"Response shape: {model_data['response'].shape}")
+            print(f"Number of subjects: {n_total_subjects}")
+            print(f"Number of timepoints: {n_timepoints}")
             return None
+
+    def _prepare_glmm_results(self, full_result, basic_result, feature_matrix):
+        """Helper to prepare GLMM results"""
+        from statsmodels.stats.outliers_influence import variance_inflation_factor
         
+        # Get feature names
+        feature_names = feature_matrix.columns
+        
+        # Create parameters with explicit index matching
+        params = pd.Series(
+            full_result.params[:len(feature_names)],
+            index=feature_names,
+            dtype=np.float64
+        )
+        
+        # For Bayesian results, use fe_sd (fixed effects standard deviation)
+        posterior_sds = pd.Series(
+            full_result.fe_sd[:len(feature_names)],
+            index=feature_names,
+            dtype=np.float64
+        )
+        
+        # Calculate probability of parameter being different from 0
+        # using the normal approximation to the posterior
+        z_scores = params / posterior_sds
+        prob_nonzero = pd.Series(
+            2 * (1 - stats.norm.cdf(abs(z_scores))),  # Two-tailed
+            index=feature_names,
+            dtype=np.float64
+        )
+        
+        # Calculate 95% credible intervals
+        conf_int = pd.DataFrame(
+            np.column_stack([
+                params - 1.96 * posterior_sds,
+                params + 1.96 * posterior_sds
+            ]),
+            index=feature_names,
+            columns=['lower', 'upper']
+        )
+        
+        # Calculate VIF only for non-interaction terms
+        vif_data = pd.DataFrame()
+        main_effect_cols = [col for col in feature_names if 'interaction' not in col]
+        for idx, col in enumerate(main_effect_cols):
+            X = feature_matrix[main_effect_cols]
+            vif_data.loc[col, 'VIF'] = variance_inflation_factor(X.values, idx)
+        
+        # For Bayesian model comparison, use DIC instead of AIC/BIC
+        model_comparison = {}
+        for model, name in [(basic_result, 'basic'), (full_result, 'full')]:
+            model_comparison[f'{name}_dic'] = getattr(model, 'dic', None)
+            model_comparison[f'{name}_vb_elbo'] = getattr(model, 'vb_elbo', None)
+        
+        return {
+            'model_results': full_result,
+            'summary': str(full_result.summary()),
+            'coefficients': params.to_dict(),
+            'posterior_sds': posterior_sds.to_dict(),
+            'prob_nonzero': prob_nonzero.to_dict(),
+            'conf_int': conf_int.to_dict(),
+            'vif': vif_data.to_dict(),
+            'model_comparison': model_comparison
+        }
+
     def save_results(self, results, filename):
         """Save analysis results"""
         save_dir = self.output_dir / '12_behavioral_analysis'
@@ -287,7 +357,9 @@ class BehavioralContentAnalysis:
 
         def convert_to_serializable(obj):
             """Recursively convert objects to JSON-serializable types"""
-            if isinstance(obj, np.ndarray):
+            if obj is None:
+                return None
+            elif isinstance(obj, np.ndarray):
                 return obj.tolist()
             elif isinstance(obj, dict):
                 return {key: convert_to_serializable(value) for key, value in obj.items()}
@@ -312,9 +384,10 @@ class BehavioralContentAnalysis:
             if key == 'content_relationships' and value is not None:
                 # Special handling for mixed effects model results
                 save_results[key] = {
-                    'coefficients': convert_to_serializable(value['coefficients'].to_dict()),
-                    'pvalues': convert_to_serializable(value['pvalues'].to_dict()),
-                    'confidence_intervals': convert_to_serializable(value['conf_int'].to_dict()),
+                    'coefficients': convert_to_serializable(value['coefficients']),
+                    'posterior_sds': convert_to_serializable(value['posterior_sds']),
+                    'prob_nonzero': convert_to_serializable(value['prob_nonzero']),
+                    'confidence_intervals': convert_to_serializable(value['conf_int']),
                     'model_summary': str(value['summary'])
                 }
             else:

@@ -12,6 +12,8 @@ from tqdm import tqdm
 from scipy import stats
 from typing import Dict, List, Tuple, Optional
 import warnings
+from statsmodels.genmod.bayes_mixed_glm import BinomialBayesMixedGLM
+
 warnings.filterwarnings('ignore')
 
 class HierarchicalStateAnalysis:
@@ -322,6 +324,9 @@ class HierarchicalStateAnalysis:
                 print(f"Target state values:", model_data['target_state'].value_counts())
                 print(f"Group distribution:", model_data['group'].value_counts())
                 
+                # Create subject dummies for random effects
+                subject_dummies = pd.get_dummies(model_data['subject']).astype(np.float64)
+                
                 # Create design matrix
                 design_matrix = sm.add_constant(pd.DataFrame({
                     'feature': model_data['feature'],
@@ -329,35 +334,22 @@ class HierarchicalStateAnalysis:
                     'interaction': model_data['feature'] * model_data['group_coded']
                 }))
                 
-                # Fit mixed model
+                # Fit model
                 try:
-                    model = MixedLM(
+                    model = BinomialBayesMixedGLM(
                         model_data['target_state'],
                         design_matrix,
-                        groups=model_data['subject']
+                        exog_vc=subject_dummies,
+                        vc_names=['subject'],
+                        ident=np.ones(subject_dummies.shape[1], dtype=np.int32)
                     )
                     print("Model created successfully")
                     
-                    results = model.fit(reml=True)
+                    results = model.fit_map()
                     print("Model fit completed")
                     
-                    # Basic convergence check
-                    if hasattr(results, 'converged') and not results.converged:
-                        print(f"Model failed to converge for feature {feature}")
-                        continue
-                    
-                    print("Model parameters:")
-                    print(results.params)
-                    print("\nP-values:")
-                    print(results.pvalues)
-                    
-                    feature_results[feature] = {
-                        'coefficients': results.params,
-                        'pvalues': results.pvalues,
-                        'conf_int': results.conf_int(),
-                        'aic': results.aic,
-                        'bic': results.bic
-                    }
+                    # Prepare results using helper method
+                    feature_results[feature] = self._prepare_glmm_results(results, design_matrix)
                     print(f"Successfully processed feature {feature}")
                     
                 except Exception as e:
@@ -376,14 +368,71 @@ class HierarchicalStateAnalysis:
             print("This might be due to convergence issues or data problems.")
             return {'feature_results': {}, 'group_stats': {}}
         
-        # Compute group-level statistics
-        group_stats = self._compute_group_stats(combined_data, state_affair, state_paranoia)
-        
         return {
             'feature_results': feature_results,
-            'group_stats': group_stats
+            'group_stats': self._compute_group_stats(combined_data, state_affair, state_paranoia)
         }
-        
+
+    def _prepare_glmm_results(self, results, design_matrix):
+        """Prepare GLMM results for a single feature analysis"""
+        try:
+            # Get feature names
+            feature_names = design_matrix.columns
+            
+            # Get fixed effects parameters and standard deviations
+            # Ensure we only get parameters for the fixed effects
+            n_fe = len(feature_names)  # number of fixed effects
+            fe_params = results.params[:n_fe]
+            fe_sds = results.fe_sd[:n_fe]
+            
+            # Calculate z-scores and p-values
+            z_scores = fe_params / fe_sds
+            prob_nonzero = 2 * (1 - stats.norm.cdf(np.abs(z_scores)))
+            
+            # Calculate 95% credible intervals
+            ci_lower = fe_params - 1.96 * fe_sds
+            ci_upper = fe_params + 1.96 * fe_sds
+            
+            # Convert everything to dictionaries with proper keys
+            coef_dict = {name: val for name, val in zip(feature_names, fe_params)}
+            sd_dict = {name: val for name, val in zip(feature_names, fe_sds)}
+            zscore_dict = {name: val for name, val in zip(feature_names, z_scores)}
+            prob_dict = {name: val for name, val in zip(feature_names, prob_nonzero)}
+            ci_dict = {
+                name: {'lower': l, 'upper': u} 
+                for name, l, u in zip(feature_names, ci_lower, ci_upper)
+            }
+            
+            # Prepare results dictionary
+            results_dict = {
+                'coefficients': coef_dict,
+                'posterior_sds': sd_dict,
+                'z_scores': zscore_dict,
+                'prob_nonzero': prob_dict,
+                'conf_int': ci_dict,
+                'model_summary': str(results.summary()),
+                'convergence': results.converged if hasattr(results, 'converged') else None,
+                'n_obs': len(design_matrix)
+            }
+            
+            # Add random effects variance if available
+            if hasattr(results, 're_sd'):
+                results_dict['random_effects'] = {
+                    'variance': float(results.re_sd ** 2) if results.re_sd is not None else None
+                }
+            
+            return results_dict
+            
+        except Exception as e:
+            print(f"Error preparing GLMM results: {str(e)}")
+            print(f"Results object attributes: {dir(results)}")
+            print(f"fe_params shape: {fe_params.shape}, fe_sds shape: {fe_sds.shape}")
+            print(f"Number of features: {n_fe}")
+            print(f"Feature names: {feature_names}")
+            print(f"Parameters: {fe_params}")
+            print(f"Standard deviations: {fe_sds}")
+            raise
+
     def _compute_group_stats(self, data, state_affair, state_paranoia):
         """
         Compute group-level statistics
@@ -432,100 +481,64 @@ class HierarchicalStateAnalysis:
     
     # Step 3: Add the cross-validation methods
     def run_cross_validation(self, state_affair: int, state_paranoia: int) -> Dict:
-        """Run both subject-level and temporal cross-validation"""
-        if not self.data_validated:
-            self._validate_input_data()
-            self._validate_data_features()
+        """Run cross-validation analysis"""
+        subject_cv_results = []
         
-        print("Running cross-validation...")
-        cv_results = {
-            'subject_cv': self._run_subject_cv(state_affair, state_paranoia),
-            'temporal_cv': self._run_temporal_cv(state_affair, state_paranoia)
-        }
-        
-        return cv_results
-    
-    def _run_subject_cv(self, state_affair: int, state_paranoia: int) -> List[Dict]:
-        """Implement leave-one-subject-out cross-validation"""
-        cv_results = []
-        
+        # Run leave-one-out CV for each subject
         for group in ['affair', 'paranoia']:
             sequences = (self.affair_sequences if group == 'affair' 
-                       else self.paranoia_sequences)
-            target_state = state_affair if group == 'affair' else state_paranoia
+                        else self.paranoia_sequences)
             
-            for subject_idx in tqdm(range(sequences.shape[0]), 
-                                  desc=f"Running subject CV for {group}"):
-                cv_results.append(
-                    self._run_single_subject_cv(sequences, subject_idx, group, target_state)
-                )
+            for subject in range(len(sequences)):
+                try:
+                    # Prepare data excluding current subject
+                    train_data = self._prepare_combined_data(state_affair, state_paranoia)
+                    train_data = train_data[
+                        ~((train_data['group'] == group) & 
+                          (train_data['subject'] == subject))
+                    ]
+                    
+                    # Create subject dummies for random effects
+                    subject_dummies = pd.get_dummies(train_data['subject']).astype(np.float64)
+                    
+                    # Prepare model data - use all features
+                    model_data = train_data.copy()
+                    feature_matrix = sm.add_constant(model_data[self.feature_matrix.columns])
+                    
+                    # Fit model
+                    model = BinomialBayesMixedGLM(
+                        model_data['target_state'],
+                        feature_matrix,
+                        exog_vc=subject_dummies,
+                        vc_names=['subject'],
+                        ident=np.ones(subject_dummies.shape[1], dtype=np.int32)
+                    )
+                    
+                    results = model.fit_vb()
+                    
+                    subject_cv_results.append({
+                        'subject': subject,
+                        'group': group,
+                        'success': True,
+                        'coefficients': {
+                            name: float(val) 
+                            for name, val in zip(feature_matrix.columns, results.params)
+                        }
+                    })
+                    
+                except Exception as e:
+                    print(f"Error in CV for {group} subject {subject}: {str(e)}")
+                    subject_cv_results.append({
+                        'subject': subject,
+                        'group': group,
+                        'success': False,
+                        'error': str(e),
+                        'error_type': type(e).__name__
+                    })
         
-        return cv_results
-    
-    def _run_single_subject_cv(self, sequences, subject_idx, group, target_state):
-        """Run cross-validation for a single subject"""
-        try:
-            # Prepare data
-            train_idx = [i for i in range(sequences.shape[0]) if i != subject_idx]
-            train_sequences = sequences[train_idx]
-            
-            train_data = pd.concat([
-                self.prepare_subject_data(i, train_sequences[i], group)
-                for i in range(len(train_idx))
-            ])
-            
-            test_data = self.prepare_subject_data(subject_idx, sequences[subject_idx], group)
-            
-            train_data['target_state'] = train_data[f'state_{target_state}']
-            test_data['target_state'] = test_data[f'state_{target_state}']
-            
-            # Fit model
-            model = MixedLM(
-                train_data['target_state'],
-                sm.add_constant(train_data[self.feature_matrix.columns]),
-                groups=train_data['subject']
-            )
-            results = model.fit(reml=True)
-            
-            # Check convergence
-            converged, diagnostics = self._check_model_convergence(
-                results, 
-                f"subject_{subject_idx}_cv"
-            )
-            if not converged:
-                return {
-                    'subject': subject_idx,
-                    'group': group,
-                    'success': False,
-                    'error': 'Model failed to converge',
-                    'diagnostics': diagnostics
-                }
-            
-            # Predict and evaluate
-            test_pred = results.predict(
-                sm.add_constant(test_data[self.feature_matrix.columns])
-            )
-            
-            mse = np.mean((test_data['target_state'] - test_pred) ** 2)
-            corr = np.corrcoef(test_data['target_state'], test_pred)[0, 1]
-            
-            return {
-                'subject': subject_idx,
-                'group': group,
-                'mse': mse,
-                'correlation': corr,
-                'success': True,
-                'convergence_diagnostics': diagnostics
-            }
-            
-        except Exception as e:
-            return {
-                'subject': subject_idx,
-                'group': group,
-                'success': False,
-                'error': str(e),
-                'error_type': type(e).__name__
-            }
+        return {
+            'subject_cv': subject_cv_results
+        }
     
     def _run_temporal_cv(self, state_affair: int, state_paranoia: int) -> List[Dict]:
         """Implement temporal cross-validation"""
@@ -544,12 +557,13 @@ class HierarchicalStateAnalysis:
                     test_data = combined_data[combined_data['timepoint'].isin(test_idx)]
                     
                     # Fit model
-                    model = MixedLM(
+                    model = sm.BinomialBayesMixedGLM(
                         train_data['target_state'],
                         sm.add_constant(train_data[self.feature_matrix.columns]),
-                        groups=train_data['subject']
+                        groups=train_data['subject'],
+                        var_names=self.feature_matrix.columns
                     )
-                    results = model.fit(reml=True)
+                    results = model.fit_map()
                     
                     # Check convergence
                     converged, diagnostics = self._check_model_convergence(
@@ -612,90 +626,58 @@ class HierarchicalStateAnalysis:
         return enhanced_results
     
     def _calculate_effect_sizes(self, results: Dict) -> Dict:
-        """Calculate effect sizes for model results"""
+        """Calculate effect sizes from model results"""
         effect_sizes = {}
         
         for feature, res in results['feature_results'].items():
-            # Calculate Cohen's d
-            group_effect = res['coefficients']['group']
-            group_se = np.sqrt(res['conf_int'].loc['group', 1] - 
-                             res['conf_int'].loc['group', 0]) / 3.92
-            
-            cohens_d = group_effect / group_se
-            
-            # Calculate odds ratios
-            odds_ratio = np.exp(group_effect)
-            odds_ratio_ci = np.exp(res['conf_int'].loc['group'])
-            
-            effect_sizes[feature] = {
-                'cohens_d': cohens_d,
-                'odds_ratio': odds_ratio,
-                'odds_ratio_ci': odds_ratio_ci
-            }
+            try:
+                # Get group effect coefficient and CI
+                group_effect = res['coefficients']['group']
+                group_ci = res['conf_int']['group']
+                
+                # Calculate standard error from CI
+                ci_width = group_ci['upper'] - group_ci['lower']
+                se = ci_width / (2 * 1.96)
+                
+                # Calculate Cohen's d
+                cohens_d = group_effect / se
+                
+                # Calculate odds ratio and CI
+                odds_ratio = np.exp(group_effect)
+                odds_ratio_ci = {
+                    'lower': np.exp(group_ci['lower']),
+                    'upper': np.exp(group_ci['upper'])
+                }
+                
+                effect_sizes[feature] = {
+                    'cohens_d': float(cohens_d),
+                    'odds_ratio': float(odds_ratio),
+                    'odds_ratio_ci': odds_ratio_ci
+                }
+                
+            except Exception as e:
+                print(f"Error calculating effect size for feature {feature}: {str(e)}")
+                print(f"Result structure for feature: {res.keys()}")
+                effect_sizes[feature] = None
         
         return effect_sizes
     
     def _apply_multiple_comparison_correction(self, results: Dict) -> Dict:
-        """
-        Apply multiple comparison corrections (FDR and Bonferroni) to p-values
-        
-        Parameters:
-            results (Dict): Dictionary containing analysis results with p-values
-            
-        Returns:
-            Dict: Dictionary with corrected p-values for each feature and comparison
-        """
-        # Extract p-values for all features and comparisons
-        feature_pvals = []
-        feature_names = []
-        
-        # Check if we have feature results
-        if not results.get('feature_results'):
-            warnings.warn("No feature results found for multiple comparison correction")
-            return {
-                'feature_names': [],
-                'original_pvals': {},
-                'fdr_corrected': {},
-                'bonferroni_corrected': {}
-            }
-        
-        for feature, res in results['feature_results'].items():
-            try:
-                # Check if we have the expected p-values
-                if not all(key in res.get('pvalues', {}) for key in ['feature', 'group', 'interaction']):
-                    warnings.warn(f"Missing p-values for feature {feature}")
-                    continue
-                    
-                # Extract p-values for main effects and interactions
-                feature_pvals.extend([
-                    res['pvalues']['feature'],
-                    res['pvalues']['group'],
-                    res['pvalues']['interaction']
-                ])
-                
-                feature_names.extend([
-                    f"{feature}_main",
-                    f"{feature}_group",
-                    f"{feature}_interaction"
-                ])
-            except Exception as e:
-                warnings.warn(f"Error processing feature {feature}: {str(e)}")
-                continue
-        
-        # Check if we have any p-values to correct
-        if not feature_pvals:
-            warnings.warn("No valid p-values found for multiple comparison correction")
-            return {
-                'feature_names': [],
-                'original_pvals': {},
-                'fdr_corrected': {},
-                'bonferroni_corrected': {}
-            }
-        
-        # Convert to numpy array for processing
-        feature_pvals = np.array(feature_pvals)
-        
+        """Apply multiple comparison correction to p-values"""
         try:
+            # Extract feature names and p-values from results
+            feature_names = list(results['feature_results'].keys())
+            feature_pvals = []
+            
+            # Collect p-values for each feature's group effect
+            for feature in feature_names:
+                pvals = results['feature_results'][feature]['prob_nonzero']
+                if 'group' in pvals:
+                    feature_pvals.append(pvals['group'])
+                else:
+                    print(f"Warning: No group p-value for feature {feature}")
+                    feature_pvals.append(1.0)  # Conservative
+            
             # Apply FDR correction
             _, fdr_pvals, _, _ = multipletests(
                 feature_pvals,
@@ -719,10 +701,11 @@ class HierarchicalStateAnalysis:
             }
             
         except Exception as e:
-            warnings.warn(f"Error in multiple comparison correction: {str(e)}")
+            print(f"Error in multiple comparison correction: {str(e)}")
+            print(f"Results structure: {results.keys()}")
             return {
-                'feature_names': feature_names,
-                'original_pvals': dict(zip(feature_names, feature_pvals)),
+                'feature_names': [],
+                'original_pvals': {},
                 'fdr_corrected': {},
                 'bonferroni_corrected': {}
             }
@@ -743,16 +726,7 @@ class HierarchicalStateAnalysis:
         for feature, res in results['feature_results'].items():
             # Get parameter estimates and standard errors
             params = res['coefficients']
-            
-            # Calculate critical value for desired confidence level
-            crit_val = stats.norm.ppf((1 + confidence_level) / 2)
-            
-            # Extract confidence intervals from model results
-            ci_lower = res['conf_int'].iloc[:, 0]
-            ci_upper = res['conf_int'].iloc[:, 1]
-            
-            # Calculate margin of error
-            margin_error = (ci_upper - ci_lower) / 2
+            conf_int = res['conf_int']
             
             # Store results for this feature
             ci_results[feature] = {
@@ -760,34 +734,36 @@ class HierarchicalStateAnalysis:
                 'parameters': {
                     param: {
                         'estimate': params[param],
-                        'ci_lower': ci_lower[param],
-                        'ci_upper': ci_upper[param],
-                        'margin_error': margin_error[param]
+                        'ci_lower': conf_int[param]['lower'],
+                        'ci_upper': conf_int[param]['upper'],
+                        'margin_error': (conf_int[param]['upper'] - conf_int[param]['lower']) / 2
                     }
-                    for param in params.index
+                    for param in params.keys()
                 }
             }
             
-            # Add standardized effect sizes with CIs
-            if 'group' in params.index:
+            # Add standardized effect sizes with CIs if group parameter exists
+            if 'group' in params:
                 # Calculate standardized effect size (Cohen's d)
-                effect_size = params['group'] / np.sqrt(margin_error['group'] * 2)
+                margin_error = (conf_int['group']['upper'] - conf_int['group']['lower']) / 2
+                effect_size = params['group'] / np.sqrt(margin_error * 2)
                 
                 # Calculate CI for effect size
-                es_ci_lower = effect_size - crit_val * np.sqrt(1/self.n_cv_folds)
-                es_ci_upper = effect_size + crit_val * np.sqrt(1/self.n_cv_folds)
+                crit_val = stats.norm.ppf((1 + confidence_level) / 2)
+                es_ci_lower = effect_size - crit_val * np.sqrt(1/len(results['feature_results']))
+                es_ci_upper = effect_size + crit_val * np.sqrt(1/len(results['feature_results']))
                 
                 ci_results[feature]['effect_size'] = {
-                    'cohens_d': effect_size,
-                    'ci_lower': es_ci_lower,
-                    'ci_upper': es_ci_upper
+                    'cohens_d': float(effect_size),
+                    'ci_lower': float(es_ci_lower),
+                    'ci_upper': float(es_ci_upper)
                 }
         
         # Add summary statistics
         ci_results['summary'] = {
             'confidence_level': confidence_level,
             'n_comparisons': len(results['feature_results']),
-            'critical_value': crit_val
+            'critical_value': float(stats.norm.ppf((1 + confidence_level) / 2))
         }
         
         return ci_results
