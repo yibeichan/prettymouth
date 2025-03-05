@@ -803,11 +803,11 @@ class HierarchicalStateAnalysis:
         
         return complete_results
     
-    def save_results(self, results):
+    def save_results(self, results, state_affair: int, state_paranoia: int):
         """
         Save complete analysis results
         """
-        out_dir = self.output_dir / "11_brain_content_analysis"
+        out_dir = self.output_dir / "11_brain_content_analysis" / f"state_affair_{state_affair}_state_paranoia_{state_paranoia}"
         os.makedirs(out_dir, exist_ok=True)
         
         # Save main analysis results if available
@@ -861,6 +861,9 @@ def main():
     output_dir = Path(scratch_dir) / "output"
     data_dir = os.path.join(scratch_dir, 'data', 'stimuli')
     
+    state_mapping = {"affair_to_paranoia": {0:1, 1:2, 2:0}, "paranoia_to_affair": {1:0, 2:1, 0:2}}
+    affair_state = 2
+    paranoia_state = state_mapping["affair_to_paranoia"][affair_state]
     # Initialize analysis
     analysis = HierarchicalStateAnalysis(
         data_dir=data_dir,
@@ -874,8 +877,8 @@ def main():
         
         # Run enhanced analysis pipeline
         results = analysis.run_complete_analysis(
-            state_affair=0,
-            state_paranoia=1
+            state_affair=affair_state,
+            state_paranoia=paranoia_state
         )
         
         # Check the enhanced results
@@ -883,7 +886,7 @@ def main():
         print("Corrected p-values:", results['main_analysis']['corrected_pvalues'])
         print("Cross-validation results:", results['cross_validation'])
         # Save results
-        analysis.save_results(results)
+        analysis.save_results(results, state_affair=affair_state, state_paranoia=paranoia_state)
         
         print("Analysis completed successfully!")
         return results
