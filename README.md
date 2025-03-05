@@ -60,6 +60,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -117,6 +118,7 @@
 │   │   ├── __init__.py
 │   │   ├── get_character.py
 │   │   └── plot.ipynb
+│   ├── figure2.ipynb
 │   ├── figures.ipynb
 │   ├── test.py
 │   └── utils
@@ -151,6 +153,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 82 files
+6 directories, 83 files
 ```
 <!-- TREE_END -->
