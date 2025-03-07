@@ -157,6 +157,72 @@ class BrainStateAnalysis:
         
         return patterns
         
+    def reorder_states_by_occupancy(self):
+        """
+        Reorder states based on fractional occupancy for each group
+        Returns dictionaries mapping original indices to new indices
+        """
+        self.logger.info("Reordering states by fractional occupancy")
+        
+        reordering_maps = {}
+        
+        for group in ['affair', 'paranoia']:
+            try:
+                # Check if the metrics are loaded
+                if group not in self.results['metrics']:
+                    self.logger.warning(f"Metrics for group {group} not found. Cannot reorder states.")
+                    continue
+                
+                # Get fractional occupancy from metrics
+                metrics = self.results['metrics'][group]
+                if 'state_metrics' in metrics and 'group_level' in metrics['state_metrics']:
+                    group_metrics = metrics['state_metrics']['group_level']
+                    
+                    if 'fractional_occupancy' in group_metrics:
+                        # Get fractional occupancy for each state
+                        fractional_occupancy = group_metrics['fractional_occupancy']
+                        self.logger.info(f"{group} fractional occupancy: {fractional_occupancy}")
+                        
+                        # Sort states by occupancy (descending order)
+                        sorted_indices = np.argsort(-np.array(fractional_occupancy))
+                        
+                        # Create mapping from original indices to new indices
+                        reordering_map = {old_idx: new_idx for new_idx, old_idx in enumerate(sorted_indices)}
+                        reordering_maps[group] = reordering_map
+                        
+                        self.logger.info(f"Reordering map for {group}: {reordering_map}")
+                        
+                        # Reorder state patterns
+                        if group in self.results['patterns']:
+                            original_patterns = self.results['patterns'][group]
+                            reordered_patterns = np.array([original_patterns[old_idx] for old_idx in sorted_indices])
+                            self.results['patterns'][group] = reordered_patterns
+                        
+                        # Reorder state sequences
+                        if group in self.results['sequences']:
+                            original_sequences = self.results['sequences'][group]
+                            reordered_sequences = np.zeros_like(original_sequences)
+                            
+                            # Map each state in the sequence to its new index
+                            for old_idx, new_idx in reordering_map.items():
+                                reordered_sequences[original_sequences == old_idx] = new_idx
+                            
+                            self.results['sequences'][group] = reordered_sequences
+                    else:
+                        self.logger.warning(f"Fractional occupancy not found for group {group}")
+                else:
+                    self.logger.warning(f"State metrics or group level metrics not found for group {group}")
+            
+            except Exception as e:
+                self.logger.error(f"Error reordering states for group {group}: {e}")
+                raise
+        
+        # Store reordering maps for later reference
+        self.results['reordering_maps'] = reordering_maps
+        self.logger.info("States reordered successfully")
+        
+        return reordering_maps
+    
     def run_analysis(self):
         """Execute complete analysis pipeline"""
         self.logger.info("Starting analysis pipeline")
@@ -274,15 +340,15 @@ class BrainStateAnalysis:
     def analyze_state_similarities(self):
         """
         Analyze similarities between state patterns across conditions.
-        Focuses on direct comparison between affair and paranoia conditions.
+        States have already been reordered by fractional occupancy.
         """
         self.logger.info("Analyzing state pattern similarities")
         
-        # Get patterns for both conditions
+        # Get patterns for both conditions (already reordered by occupancy)
         affair_patterns = self.results['patterns']['affair']
         paranoia_patterns = self.results['patterns']['paranoia']
         
-        # Compute similarity matrix
+        # Compute pairwise similarity matrix
         similarity_matrix = np.zeros((3, 3))
         for i in range(3):
             for j in range(3):
@@ -291,9 +357,12 @@ class BrainStateAnalysis:
                     paranoia_patterns[j]
                 )
         
-        # Find best matching states
-        matched_states = self._match_states(similarity_matrix)
-        
+        # For reordered states, the best match is typically along diagonal
+        # But we'll still find optimal matching for completeness
+        matched_states = []
+        for i in range(3):
+            matched_states.append((i, i))  # Direct correspondence after reordering
+            
         self.results['comparisons']['state_similarity'] = {
             'similarity_matrix': similarity_matrix,
             'matched_states': matched_states

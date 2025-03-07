@@ -373,65 +373,164 @@ class HierarchicalStateAnalysis:
             'group_stats': self._compute_group_stats(combined_data, state_affair, state_paranoia)
         }
 
-    def _prepare_glmm_results(self, results, design_matrix):
-        """Prepare GLMM results for a single feature analysis"""
-        try:
-            # Get feature names
-            feature_names = design_matrix.columns
+    def _prepare_glmm_results(self, results, design_matrix, probability_mass=0.95, rope_width=0.1):
+        """
+        Process and organize Bayesian GLMM results with appropriate Bayesian metrics
+        
+        Parameters:
+        -----------
+        results : statsmodels.genmod.bayes_mixed_glm.BinomialBayesMixedGLMResults
+            Fitted model results
+        design_matrix : pandas.DataFrame
+            Design matrix used for model fitting
+        probability_mass : float, optional (default=0.95)
+            Probability mass for highest density intervals
+        rope_width : float, optional (default=0.1)
+            Width of Region of Practical Equivalence for effect size interpretation
             
-            # Get fixed effects parameters and standard deviations
-            # Ensure we only get parameters for the fixed effects
-            n_fe = len(feature_names)  # number of fixed effects
-            fe_params = results.params[:n_fe]
-            fe_sds = results.fe_sd[:n_fe]
-            
-            # Calculate z-scores and p-values
-            z_scores = fe_params / fe_sds
-            prob_nonzero = 2 * (1 - stats.norm.cdf(np.abs(z_scores)))
-            
-            # Calculate 95% credible intervals
-            ci_lower = fe_params - 1.96 * fe_sds
-            ci_upper = fe_params + 1.96 * fe_sds
-            
-            # Convert everything to dictionaries with proper keys
-            coef_dict = {name: val for name, val in zip(feature_names, fe_params)}
-            sd_dict = {name: val for name, val in zip(feature_names, fe_sds)}
-            zscore_dict = {name: val for name, val in zip(feature_names, z_scores)}
-            prob_dict = {name: val for name, val in zip(feature_names, prob_nonzero)}
-            ci_dict = {
-                name: {'lower': l, 'upper': u} 
-                for name, l, u in zip(feature_names, ci_lower, ci_upper)
+        Returns:
+        --------
+        dict
+            Dictionary containing organized Bayesian results and metrics
+        """
+        # Get feature names
+        feature_names = design_matrix.columns
+        
+        # Get fixed effects parameters and standard deviations
+        n_fe = len(feature_names)  # number of fixed effects
+        fe_params = results.params[:n_fe]
+        fe_sds = results.fe_sd[:n_fe]
+        
+        # Calculate posterior probabilities
+        # For each parameter, calculate P(parameter > 0) and P(parameter < 0)
+        posterior_prob_positive = 1 - stats.norm.cdf(0, loc=fe_params, scale=fe_sds)
+        posterior_prob_negative = stats.norm.cdf(0, loc=fe_params, scale=fe_sds)
+        
+        # Choose the appropriate probability based on the direction of the effect
+        posterior_prob = np.where(fe_params > 0, posterior_prob_positive, posterior_prob_negative)
+        
+        # Calculate z-score for desired probability mass
+        z_score = stats.norm.ppf((1 + probability_mass) / 2)
+        
+        # Calculate Highest Density Interval (HDI)
+        hdi_lower = fe_params - z_score * fe_sds
+        hdi_upper = fe_params + z_score * fe_sds
+        
+        # Calculate ROPE probabilities (Region of Practical Equivalence)
+        # Probability that parameter is within ROPE (practically equivalent to zero)
+        prob_in_rope = (stats.norm.cdf(rope_width, loc=fe_params, scale=fe_sds) - 
+                        stats.norm.cdf(-rope_width, loc=fe_params, scale=fe_sds))
+        # Probability that parameter is practically positive
+        prob_practical_pos = 1 - stats.norm.cdf(rope_width, loc=fe_params, scale=fe_sds)
+        # Probability that parameter is practically negative
+        prob_practical_neg = stats.norm.cdf(-rope_width, loc=fe_params, scale=fe_sds)
+        
+        # Calculate approximate Bayes factors
+        # BF10: Evidence for alternative vs null (parameter ≠ 0)
+        # Using Savage-Dickey density ratio approximation
+        null_density = stats.norm.pdf(0, loc=0, scale=1)  # Prior density at null
+        posterior_density = stats.norm.pdf(0, loc=fe_params, scale=fe_sds)  # Posterior density at null
+        bayes_factors = np.where(
+            posterior_density < 1e-10,  # Avoid division by zero
+            1000,  # Cap extremely large Bayes factors
+            null_density / posterior_density
+        )
+        
+        # Calculate odds ratios and their HDIs (for interpretation)
+        odds_ratios = np.exp(fe_params)
+        odds_ratio_lower = np.exp(hdi_lower)
+        odds_ratio_upper = np.exp(hdi_upper)
+        
+        # Convert everything to dictionaries with proper keys
+        coef_dict = {name: float(val) for name, val in zip(feature_names, fe_params)}
+        sd_dict = {name: float(val) for name, val in zip(feature_names, fe_sds)}
+        posterior_prob_dict = {name: float(val) for name, val in zip(feature_names, posterior_prob)}
+        pos_prob_dict = {name: float(val) for name, val in zip(feature_names, posterior_prob_positive)}
+        neg_prob_dict = {name: float(val) for name, val in zip(feature_names, posterior_prob_negative)}
+        
+        hdi_dict = {
+            name: {'lower': float(l), 'upper': float(u)} 
+            for name, l, u in zip(feature_names, hdi_lower, hdi_upper)
+        }
+        
+        rope_dict = {
+            name: {
+                'prob_in_rope': float(in_rope),
+                'prob_practical_pos': float(p_pos),
+                'prob_practical_neg': float(p_neg)
             }
-            
-            # Prepare results dictionary
-            results_dict = {
-                'coefficients': coef_dict,
-                'posterior_sds': sd_dict,
-                'z_scores': zscore_dict,
-                'prob_nonzero': prob_dict,
-                'conf_int': ci_dict,
-                'model_summary': str(results.summary()),
-                'convergence': results.converged if hasattr(results, 'converged') else None,
-                'n_obs': len(design_matrix)
+            for name, in_rope, p_pos, p_neg in zip(
+                feature_names, prob_in_rope, prob_practical_pos, prob_practical_neg
+            )
+        }
+        
+        bayes_factor_dict = {
+            name: float(bf) for name, bf in zip(feature_names, bayes_factors)
+        }
+        
+        odds_ratio_dict = {
+            name: {
+                'odds_ratio': float(or_val),
+                'lower': float(or_l),
+                'upper': float(or_u)
             }
+            for name, or_val, or_l, or_u in zip(
+                feature_names, odds_ratios, odds_ratio_lower, odds_ratio_upper
+            )
+        }
+        
+        # Prepare results dictionary
+        results_dict = {
+            # Basic parameter estimates
+            'coefficients': coef_dict,
+            'posterior_sds': sd_dict,
             
-            # Add random effects variance if available
-            if hasattr(results, 're_sd'):
-                results_dict['random_effects'] = {
-                    'variance': float(results.re_sd ** 2) if results.re_sd is not None else None
-                }
+            # Directional probabilities
+            'posterior_prob': posterior_prob_dict,  # Probability parameter is non-zero in the direction of the mean
+            'prob_positive': pos_prob_dict,         # Probability parameter is > 0
+            'prob_negative': neg_prob_dict,         # Probability parameter is < 0
             
-            return results_dict
+            # Interval estimates
+            'hdi': hdi_dict,                        # Highest Density Interval
+            'probability_mass': probability_mass,   # Probability mass within HDI
             
-        except Exception as e:
-            print(f"Error preparing GLMM results: {str(e)}")
-            print(f"Results object attributes: {dir(results)}")
-            print(f"fe_params shape: {fe_params.shape}, fe_sds shape: {fe_sds.shape}")
-            print(f"Number of features: {n_fe}")
-            print(f"Feature names: {feature_names}")
-            print(f"Parameters: {fe_params}")
-            print(f"Standard deviations: {fe_sds}")
-            raise
+            # Practical significance metrics
+            'rope': rope_dict,                      # Region of Practical Equivalence metrics
+            'rope_width': rope_width,               # Width of ROPE
+            
+            # Evidence metrics
+            'bayes_factors': bayes_factor_dict,     # Approximate Bayes factors
+            
+            # Interpretable effect sizes
+            'odds_ratios': odds_ratio_dict,         # Odds ratios with HDIs
+            
+            # Model diagnostics
+            'model_summary': str(results.summary()),
+            'convergence': getattr(results, 'converged', None),
+            'n_obs': len(design_matrix),
+            'effective_samples': getattr(results, 'n_eff', None)
+        }
+        
+        # Add evidence categories based on Bayes factors
+        evidence_categories = {}
+        for name, bf in bayes_factor_dict.items():
+            if bf < 1:
+                evidence = "Evidence favors null"
+            elif bf < 3:
+                evidence = "Anecdotal evidence"
+            elif bf < 10:
+                evidence = "Moderate evidence"
+            elif bf < 30:
+                evidence = "Strong evidence"
+            elif bf < 100:
+                evidence = "Very strong evidence"
+            else:
+                evidence = "Extreme evidence"
+            evidence_categories[name] = evidence
+        
+        results_dict['evidence_categories'] = evidence_categories
+        
+        return results_dict
 
     def _compute_group_stats(self, data, state_affair, state_paranoia):
         """
@@ -611,162 +710,297 @@ class HierarchicalStateAnalysis:
 
     # Step 4: Add statistical enhancement methods
     def enhance_analysis_results(self, results: Dict) -> Dict:
-        """Add statistical enhancements to analysis results"""
+        """
+        Add Bayesian statistical enhancements to analysis results
+        
+        Parameters:
+        -----------
+        results : Dict
+            Dictionary containing the base analysis results
+            
+        Returns:
+        --------
+        Dict
+            Enhanced results with additional Bayesian metrics
+        """
         enhanced_results = results.copy()
         
-        # Add effect sizes
+        # Add effect sizes (odds ratios and standardized effects)
         enhanced_results['effect_sizes'] = self._calculate_effect_sizes(results)
         
-        # Add corrected p-values
-        enhanced_results['corrected_pvalues'] = self._apply_multiple_comparison_correction(results)
+        # Add Bayesian multiple comparison adjustments
+        enhanced_results['bayesian_multiple_comparison'] = self._apply_bayesian_multiple_comparison(results)
         
-        # Add confidence intervals
-        enhanced_results['confidence_intervals'] = self._compute_confidence_intervals(results)
+        # Add credible intervals for parameters
+        enhanced_results['credible_intervals'] = self._compute_credible_intervals(results)
+        
+        # Add ROPE (Region of Practical Equivalence) analysis
+        enhanced_results['practical_significance'] = self._compute_practical_significance(results)
         
         return enhanced_results
     
     def _calculate_effect_sizes(self, results: Dict) -> Dict:
-        """Calculate effect sizes from model results"""
+        """
+        Calculate Bayesian effect sizes from model results
+        
+        Parameters:
+        -----------
+        results : Dict
+            Dictionary containing model results
+            
+        Returns:
+        --------
+        Dict
+            Dictionary of effect sizes for each feature
+        """
         effect_sizes = {}
         
         for feature, res in results['feature_results'].items():
             try:
-                # Get group effect coefficient and CI
+                # Get group effect coefficient and posterior SD
+                if 'group' not in res['coefficients']:
+                    print(f"No group effect for feature {feature}, skipping")
+                    continue
+                    
                 group_effect = res['coefficients']['group']
-                group_ci = res['conf_int']['group']
                 
-                # Calculate standard error from CI
-                ci_width = group_ci['upper'] - group_ci['lower']
-                se = ci_width / (2 * 1.96)
+                # For Bayesian models, use posterior SD directly
+                posterior_sd = res['posterior_sds']['group']
                 
-                # Calculate Cohen's d
-                cohens_d = group_effect / se
+                # Get HDI (highest density interval) for the effect
+                group_hdi = res['hdi']['group']
                 
-                # Calculate odds ratio and CI
+                # Calculate odds ratio and HDI
                 odds_ratio = np.exp(group_effect)
-                odds_ratio_ci = {
-                    'lower': np.exp(group_ci['lower']),
-                    'upper': np.exp(group_ci['upper'])
+                odds_ratio_hdi = {
+                    'lower': np.exp(group_hdi['lower']),
+                    'upper': np.exp(group_hdi['upper'])
                 }
                 
+                # Calculate probability of direction (more appropriate than Cohen's d)
+                # This is the probability that the effect is in the direction of the mean
+                if 'posterior_prob' in res and 'group' in res['posterior_prob']:
+                    prob_direction = res['posterior_prob']['group']
+                else:
+                    # Calculate if not available
+                    prob_direction = 1 - stats.norm.cdf(0, loc=group_effect, scale=posterior_sd)
+                    if group_effect < 0:
+                        prob_direction = 1 - prob_direction
+                
+                # Calculate standardized effect (better than Cohen's d for this context)
+                # This is in log-odds units, appropriate for binary outcomes
+                standardized_effect = group_effect / posterior_sd
+                
+                # Probability of practical significance
+                # Probability that effect size is larger than threshold (e.g., 0.2 in standardized units)
+                threshold = 0.2
+                prob_practical = 1 - stats.norm.cdf(threshold, loc=standardized_effect, scale=1.0)
+                
+                # Calculate relative risk when possible (more interpretable than odds ratio)
+                # Needs base rate information - approximate from model intercept
+                if 'const' in res['coefficients']:
+                    intercept = res['coefficients']['const']
+                    # Convert log odds to probability
+                    base_prob = 1 / (1 + np.exp(-intercept))
+                    effect_prob = 1 / (1 + np.exp(-(intercept + group_effect)))
+                    relative_risk = effect_prob / base_prob
+                else:
+                    relative_risk = None
+                
                 effect_sizes[feature] = {
-                    'cohens_d': float(cohens_d),
+                    'standardized_effect': float(standardized_effect),
                     'odds_ratio': float(odds_ratio),
-                    'odds_ratio_ci': odds_ratio_ci
+                    'odds_ratio_hdi': odds_ratio_hdi,
+                    'probability_direction': float(prob_direction),
+                    'probability_practical': float(prob_practical),
+                    'relative_risk': float(relative_risk) if relative_risk is not None else None
                 }
                 
             except Exception as e:
                 print(f"Error calculating effect size for feature {feature}: {str(e)}")
-                print(f"Result structure for feature: {res.keys()}")
+                print(f"Result structure for feature: {list(res.keys())}")
                 effect_sizes[feature] = None
         
         return effect_sizes
     
-    def _apply_multiple_comparison_correction(self, results: Dict) -> Dict:
-        """Apply multiple comparison correction to p-values"""
-        try:
-            # Extract feature names and p-values from results
-            feature_names = list(results['feature_results'].keys())
-            feature_pvals = []
-            
-            # Collect p-values for each feature's group effect
-            for feature in feature_names:
-                pvals = results['feature_results'][feature]['prob_nonzero']
-                if 'group' in pvals:
-                    feature_pvals.append(pvals['group'])
-                else:
-                    print(f"Warning: No group p-value for feature {feature}")
-                    feature_pvals.append(1.0)  # Conservative
-            
-            # Apply FDR correction
-            _, fdr_pvals, _, _ = multipletests(
-                feature_pvals,
-                alpha=0.05,
-                method='fdr_bh'
-            )
-            
-            # Apply Bonferroni correction
-            _, bonf_pvals, _, _ = multipletests(
-                feature_pvals,
-                alpha=0.05,
-                method='bonferroni'
-            )
-            
-            # Organize results
-            return {
-                'feature_names': feature_names,
-                'original_pvals': dict(zip(feature_names, feature_pvals)),
-                'fdr_corrected': dict(zip(feature_names, fdr_pvals)),
-                'bonferroni_corrected': dict(zip(feature_names, bonf_pvals))
-            }
-            
-        except Exception as e:
-            print(f"Error in multiple comparison correction: {str(e)}")
-            print(f"Results structure: {results.keys()}")
-            return {
-                'feature_names': [],
-                'original_pvals': {},
-                'fdr_corrected': {},
-                'bonferroni_corrected': {}
-            }
+    def _apply_bayesian_multiple_comparison(self, results):
+        # Extract posterior probabilities
+        feature_names = list(results['feature_results'].keys())
+        feature_probs = []
+        
+        for feature in feature_names:
+            probs = results['feature_results'][feature]['posterior_prob']
+            if 'interaction' in probs:
+                feature_probs.append(probs['interaction'])
+        
+        # Apply Bayesian FDR
+        # Sort probabilities
+        sorted_idx = np.argsort(feature_probs)[::-1]  # Descending
+        sorted_probs = np.array(feature_probs)[sorted_idx]
+        sorted_features = np.array(feature_names)[sorted_idx]
+        
+        # Compute expected FDR at each threshold
+        cumulative_fdr = [(1-p) * (i+1) / (i+1) for i, p in enumerate(sorted_probs)]
+        
+        # Find features passing FDR threshold
+        fdr_threshold = 0.05  # Adjust as needed
+        passing_idx = np.where(np.array(cumulative_fdr) <= fdr_threshold)[0]
+        passing_features = sorted_features[passing_idx].tolist() if len(passing_idx) > 0 else []
+        
+        return {
+            'feature_names': feature_names,
+            'posterior_probs': dict(zip(feature_names, feature_probs)),
+            'significant_features': passing_features,
+            'fdr_threshold': fdr_threshold
+        }
 
-    def _compute_confidence_intervals(self, results: Dict, confidence_level: float = 0.95) -> Dict:
+    def _compute_credible_intervals(self, results: Dict, probability_mass: float = 0.95) -> Dict:
         """
-        Compute confidence intervals for model parameters
+        Compute Bayesian credible intervals for model parameters
         
         Parameters:
             results (Dict): Dictionary containing analysis results
-            confidence_level (float): Desired confidence level (default: 0.95)
+            probability_mass (float): Desired probability mass within interval (default: 0.95)
             
         Returns:
-            Dict: Dictionary with confidence intervals for each feature and parameter
+            Dict: Dictionary with credible intervals for each feature and parameter
         """
-        ci_results = {}
+        cred_results = {}
         
         for feature, res in results['feature_results'].items():
-            # Get parameter estimates and standard errors
+            # Get parameter estimates and standard deviations from posterior
             params = res['coefficients']
-            conf_int = res['conf_int']
+            posterior_sds = res['posterior_sds']
+            
+            # Compute highest density intervals (HDI)
+            cred_int = {}
+            for param in params.keys():
+                # For normal posterior, HDI is symmetric around mean
+                z_score = stats.norm.ppf((1 + probability_mass) / 2)
+                cred_int[param] = {
+                    'lower': params[param] - z_score * posterior_sds[param],
+                    'upper': params[param] + z_score * posterior_sds[param]
+                }
             
             # Store results for this feature
-            ci_results[feature] = {
-                'confidence_level': confidence_level,
+            cred_results[feature] = {
+                'probability_mass': probability_mass,
                 'parameters': {
                     param: {
                         'estimate': params[param],
-                        'ci_lower': conf_int[param]['lower'],
-                        'ci_upper': conf_int[param]['upper'],
-                        'margin_error': (conf_int[param]['upper'] - conf_int[param]['lower']) / 2
+                        'cred_lower': cred_int[param]['lower'],
+                        'cred_upper': cred_int[param]['upper'],
+                        'interval_width': cred_int[param]['upper'] - cred_int[param]['lower']
                     }
                     for param in params.keys()
                 }
             }
             
-            # Add standardized effect sizes with CIs if group parameter exists
+            # Add standardized effect sizes with credible intervals if group parameter exists
             if 'group' in params:
-                # Calculate standardized effect size (Cohen's d)
-                margin_error = (conf_int['group']['upper'] - conf_int['group']['lower']) / 2
-                effect_size = params['group'] / np.sqrt(margin_error * 2)
+                # Calculate standardized effect size (more appropriate for Bayesian)
+                posterior_sd_group = posterior_sds['group']
+                effect_size = params['group'] / posterior_sd_group
                 
-                # Calculate CI for effect size
-                crit_val = stats.norm.ppf((1 + confidence_level) / 2)
-                es_ci_lower = effect_size - crit_val * np.sqrt(1/len(results['feature_results']))
-                es_ci_upper = effect_size + crit_val * np.sqrt(1/len(results['feature_results']))
+                # Calculate credible interval for effect size
+                es_cred_lower = effect_size - z_score
+                es_cred_upper = effect_size + z_score
                 
-                ci_results[feature]['effect_size'] = {
-                    'cohens_d': float(effect_size),
-                    'ci_lower': float(es_ci_lower),
-                    'ci_upper': float(es_ci_upper)
+                cred_results[feature]['effect_size'] = {
+                    'standardized_mean': float(effect_size),
+                    'cred_lower': float(es_cred_lower),
+                    'cred_upper': float(es_cred_upper)
                 }
         
         # Add summary statistics
-        ci_results['summary'] = {
-            'confidence_level': confidence_level,
+        cred_results['summary'] = {
+            'probability_mass': probability_mass,
             'n_comparisons': len(results['feature_results']),
-            'critical_value': float(stats.norm.ppf((1 + confidence_level) / 2))
+            'z_score': float(stats.norm.ppf((1 + probability_mass) / 2))
         }
         
-        return ci_results
+        return cred_results
+    
+    def _compute_practical_significance(self, results: Dict, rope_width: float = 0.1) -> Dict:
+        """
+        Compute practical significance metrics using Region of Practical Equivalence (ROPE)
+        
+        Parameters:
+        -----------
+        results : Dict
+            Dictionary containing analysis results
+        rope_width : float, optional (default=0.1)
+            Width of the ROPE interval, representing the range of parameter values
+            considered practically equivalent to zero
+            
+        Returns:
+        --------
+        Dict
+            Dictionary containing practical significance metrics for each feature
+        """
+        practical_sig = {}
+        
+        for feature, res in results['feature_results'].items():
+            # Skip if no rope information
+            if 'rope' not in res:
+                continue
+                
+            feature_practical = {}
+            
+            # Focus on group effect and interaction
+            for param in ['group', 'interaction']:
+                if param in res['rope']:
+                    # Get ROPE probabilities
+                    prob_in_rope = res['rope'][param]['prob_in_rope']
+                    prob_practical_pos = res['rope'][param]['prob_practical_pos']
+                    prob_practical_neg = res['rope'][param]['prob_practical_neg']
+                    
+                    # Create clear interpretations
+                    if prob_in_rope > 0.95:
+                        interpretation = "Practically equivalent to zero"
+                    elif prob_practical_pos > 0.95:
+                        interpretation = "Practically positive"
+                    elif prob_practical_neg > 0.95:
+                        interpretation = "Practically negative"
+                    else:
+                        interpretation = "Uncertain practical significance"
+                    
+                    feature_practical[param] = {
+                        'prob_in_rope': prob_in_rope,
+                        'prob_practical_pos': prob_practical_pos,
+                        'prob_practical_neg': prob_practical_neg,
+                        'interpretation': interpretation
+                    }
+            
+            practical_sig[feature] = feature_practical
+        
+        # Add summary of practical significance across features
+        practical_sig['summary'] = {
+            'rope_width': rope_width,
+            'n_features': len(results['feature_results']),
+            'feature_count_by_interpretation': self._count_interpretations(practical_sig)
+        }
+        
+        return practical_sig
+
+    def _count_interpretations(self, practical_sig: Dict) -> Dict:
+        """Helper method to count interpretations across features"""
+        counts = {
+            'Practically equivalent to zero': 0,
+            'Practically positive': 0,
+            'Practically negative': 0,
+            'Uncertain practical significance': 0
+        }
+        
+        for feature, params in practical_sig.items():
+            if feature == 'summary':
+                continue
+                
+            for param, values in params.items():
+                if param == 'group' and 'interpretation' in values:
+                    counts[values['interpretation']] += 1
+        
+        return counts
 
     def run_complete_analysis(self, state_affair: int, state_paranoia: int) -> Dict:
         """Run complete analysis pipeline with enhancements"""
@@ -805,53 +1039,169 @@ class HierarchicalStateAnalysis:
     
     def save_results(self, results, state_affair: int, state_paranoia: int):
         """
-        Save complete analysis results
+        Save complete Bayesian analysis results to files
+        
+        Parameters:
+        -----------
+        results : Dict
+            Dictionary containing analysis results
+        state_affair : int
+            State index for affair group
+        state_paranoia : int
+            State index for paranoia group
         """
+        # Create output directory
         out_dir = self.output_dir / "11_brain_content_analysis" / f"state_affair_{state_affair}_state_paranoia_{state_paranoia}"
         os.makedirs(out_dir, exist_ok=True)
         
+        # Format timestamp for filenames
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        
         # Save main analysis results if available
         if 'feature_results' in results.get('main_analysis', {}):
-            main_results_df = pd.DataFrame(results['main_analysis']['feature_results'])
-            main_results_df.to_csv(out_dir / 'main_analysis_results.csv')
+            # The nested dictionary structure won't convert directly to DataFrame
+            # Extract key metrics into a more tabular format
+            feature_names = []
+            coefs = []
+            prob_directions = []
+            odds_ratios = []
+            
+            for feature, res in results['main_analysis']['feature_results'].items():
+                feature_names.append(feature)
+                
+                # Get coefficient for group effect if available
+                if 'coefficients' in res and 'group' in res['coefficients']:
+                    coefs.append(res['coefficients']['group'])
+                else:
+                    coefs.append(None)
+                    
+                # Get probability of direction
+                if 'posterior_prob' in res and 'group' in res['posterior_prob']:
+                    prob_directions.append(res['posterior_prob']['group'])
+                else:
+                    prob_directions.append(None)
+                    
+                # Get odds ratio
+                if 'odds_ratios' in res and 'group' in res['odds_ratios']:
+                    odds_ratios.append(res['odds_ratios']['group']['odds_ratio'])
+                else:
+                    odds_ratios.append(None)
+            
+            # Create DataFrame
+            main_results_df = pd.DataFrame({
+                'feature': feature_names,
+                'coefficient': coefs,
+                'probability_direction': prob_directions,
+                'odds_ratio': odds_ratios
+            })
+            
+            # Save to CSV
+            main_results_df.to_csv(out_dir / f'main_analysis_results_{timestamp}.csv', index=False)
         
         # Save cross-validation results if available
         cv_results = results.get('cross_validation', {})
+        
         if 'subject_cv' in cv_results:
+            # Convert list of dicts to DataFrame
             subject_cv_df = pd.DataFrame(cv_results['subject_cv'])
-            subject_cv_df.to_csv(out_dir / 'subject_cv_results.csv')
+            subject_cv_df.to_csv(out_dir / f'subject_cv_results_{timestamp}.csv', index=False)
         
         if 'temporal_cv' in cv_results:
+            # Convert list of dicts to DataFrame
             temporal_cv_df = pd.DataFrame(cv_results['temporal_cv'])
-            temporal_cv_df.to_csv(out_dir / 'temporal_cv_results.csv')
+            temporal_cv_df.to_csv(out_dir / f'temporal_cv_results_{timestamp}.csv', index=False)
         
-        # Convert timestamp to string in metadata before saving
+        # Save Bayesian comparison results if available
+        if 'bayesian_multiple_comparison' in results.get('main_analysis', {}):
+            bayes_comp = results['main_analysis']['bayesian_multiple_comparison']
+            
+            # Extract values to DataFrame
+            if 'posterior_probs' in bayes_comp:
+                bayes_df = pd.DataFrame({
+                    'feature': list(bayes_comp['posterior_probs'].keys()),
+                    'posterior_probability': list(bayes_comp['posterior_probs'].values()),
+                    'significant': [
+                        feat in bayes_comp.get('significant_features', []) 
+                        for feat in bayes_comp['posterior_probs'].keys()
+                    ]
+                })
+                bayes_df.to_csv(out_dir / f'bayesian_comparison_{timestamp}.csv', index=False)
+        
+        # Convert metadata timestamp to string before saving
         if 'metadata' in results:
             metadata = results['metadata'].copy()
             if 'timestamp' in metadata:
                 metadata['timestamp'] = metadata['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
-            with open(out_dir / 'analysis_metadata.json', 'w') as f:
-                json.dump(metadata, f)
+            
+            # Add analysis type information
+            metadata['analysis_type'] = 'bayesian_glmm'
+            metadata['bayes_info'] = {
+                'model': 'BinomialBayesMixedGLM',
+                'inference': 'MAP (Maximum A Posteriori)',
+                'software': 'statsmodels'
+            }
+            
+            # Save metadata as JSON
+            with open(out_dir / f'analysis_metadata_{timestamp}.json', 'w') as f:
+                json.dump(metadata, f, indent=2)
 
-        # Prepare output dictionary with available data
+        # Prepare complete output dictionary
         output_dict = {
             'metadata': {
                 'timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'states_compared': results['metadata']['states_compared'],
+                'states_compared': {
+                    'affair': state_affair,
+                    'paranoia': state_paranoia
+                },
                 'n_subjects': {
                     'affair': self.affair_sequences.shape[0],
                     'paranoia': self.paranoia_sequences.shape[0]
-                }
+                },
+                'analysis_type': 'bayesian_glmm'
             },
             'main_analysis': results['main_analysis'],
             'cross_validation': results['cross_validation']
         }
         
-        # Save as compressed numpy archive
-        np.savez_compressed(
-            out_dir / f'hierarchical_analysis_results_{output_dict["metadata"]["timestamp"].replace(" ", "_").replace(":", "-")}.npz',
-            **output_dict
-        )
+        # Save complete results as compressed numpy archive
+        try:
+            np.savez_compressed(
+                out_dir / f'hierarchical_analysis_results_{timestamp}.npz',
+                **output_dict
+            )
+        except Exception as e:
+            print(f"Error saving complete results: {str(e)}")
+            # Try saving a simplified version if the full one fails
+            simplified_dict = {
+                'metadata': output_dict['metadata'],
+                # Include only essential analysis results
+                'simplified_results': True
+            }
+            np.savez_compressed(
+                out_dir / f'hierarchical_analysis_results_simplified_{timestamp}.npz',
+                **simplified_dict
+            )
+            
+        # Also save as JSON for easier inspection
+        try:
+            # Convert numpy arrays and other non-serializable objects
+            def convert_for_json(obj):
+                if isinstance(obj, (np.int64, np.int32, np.float64, np.float32)):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, dict):
+                    return {k: convert_for_json(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_for_json(i) for i in obj]
+                else:
+                    return obj
+            
+            json_safe_dict = convert_for_json(output_dict)
+            with open(out_dir / f'hierarchical_analysis_results_{timestamp}.json', 'w') as f:
+                json.dump(json_safe_dict, f, indent=2)
+        except Exception as e:
+            print(f"Error saving JSON results: {str(e)}")
 
 def main():
     load_dotenv()
@@ -862,7 +1212,7 @@ def main():
     data_dir = os.path.join(scratch_dir, 'data', 'stimuli')
     
     state_mapping = {"affair_to_paranoia": {0:1, 1:2, 2:0}, "paranoia_to_affair": {1:0, 2:1, 0:2}}
-    affair_state = 2
+    affair_state = 1
     paranoia_state = state_mapping["affair_to_paranoia"][affair_state]
     # Initialize analysis
     analysis = HierarchicalStateAnalysis(
@@ -883,7 +1233,7 @@ def main():
         
         # Check the enhanced results
         print("Effect sizes:", results['main_analysis']['effect_sizes'])
-        print("Corrected p-values:", results['main_analysis']['corrected_pvalues'])
+        print("Bayesian multiple comparison:", results['main_analysis']['bayesian_multiple_comparison'])
         print("Cross-validation results:", results['cross_validation'])
         # Save results
         analysis.save_results(results, state_affair=affair_state, state_paranoia=paranoia_state)
