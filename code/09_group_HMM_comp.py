@@ -235,6 +235,9 @@ class BrainStateAnalysis:
             # 2. Extract state patterns
             self.compute_state_patterns()
             
+            # 3. Reorder states by fractional occupancy
+            self.reorder_states_by_occupancy()
+            
             # Add debugging before each analysis
             self.logger.info("Running state similarities analysis...")
             self.analyze_state_similarities()
@@ -316,6 +319,10 @@ class BrainStateAnalysis:
                     'difference': trans_data['difference'].tolist() if isinstance(trans_data['difference'], np.ndarray) else trans_data['difference']
                 }
                 
+            # Save reordering maps
+            if 'reordering_maps' in self.results:
+                saveable_comparisons['reordering_maps'] = self.results['reordering_maps']
+                
             # Save the processed comparisons
             comp_file = output_dir / "comparisons.pkl"
             with open(comp_file, 'wb') as f:
@@ -325,6 +332,7 @@ class BrainStateAnalysis:
             metadata = {
                 'timestamp': datetime.now().isoformat(),
                 'groups_analyzed': list(self.results['models'].keys()),
+                'states_reordered_by': 'fractional_occupancy'
             }
             meta_file = output_dir / "metadata.json"
             with open(meta_file, 'w') as f:
@@ -339,7 +347,7 @@ class BrainStateAnalysis:
 
     def analyze_state_similarities(self):
         """
-        Analyze similarities between state patterns across conditions.
+        Analyze similarities between state patterns across conditions using correlation.
         States have already been reordered by fractional occupancy.
         """
         self.logger.info("Analyzing state pattern similarities")
@@ -348,45 +356,26 @@ class BrainStateAnalysis:
         affair_patterns = self.results['patterns']['affair']
         paranoia_patterns = self.results['patterns']['paranoia']
         
-        # Compute pairwise similarity matrix
+        # Compute pairwise similarity matrix using correlation
         similarity_matrix = np.zeros((3, 3))
         for i in range(3):
             for j in range(3):
-                similarity_matrix[i, j] = 1 - cosine(
-                    affair_patterns[i], 
-                    paranoia_patterns[j]
-                )
+                similarity_matrix[i, j] = np.corrcoef(affair_patterns[i], paranoia_patterns[j])[0, 1]
         
-        # For reordered states, the best match is typically along diagonal
-        # But we'll still find optimal matching for completeness
-        matched_states = []
+        # Find matching states based on highest correlation
+        corresponding_states = []
         for i in range(3):
-            matched_states.append((i, i))  # Direct correspondence after reordering
-            
+            # Find the paranoia state with highest correlation to this affair state
+            best_match = np.argmax(similarity_matrix[i, :])
+            corresponding_states.append((i, best_match))
+        
         self.results['comparisons']['state_similarity'] = {
             'similarity_matrix': similarity_matrix,
-            'matched_states': matched_states
+            'matched_states': corresponding_states
         }
         
         self.logger.info("State similarity analysis completed")
-        return matched_states
-    
-    def _match_states(self, similarity_matrix):
-        """
-        Find optimal matching between states based on similarity matrix
-        using a greedy approach.
-        """
-        matched_pairs = []
-        available_cols = list(range(3))
-        
-        for i in range(3):
-            # Find best match for current state
-            similarities = similarity_matrix[i, available_cols]
-            best_match_idx = np.argmax(similarities)
-            matched_pairs.append((i, available_cols[best_match_idx]))
-            available_cols.pop(best_match_idx)
-            
-        return matched_pairs
+        return corresponding_states
     
     def analyze_temporal_dynamics(self):
         """
@@ -466,10 +455,7 @@ class BrainStateAnalysis:
         """
         self.logger.info("Analyzing state transitions")
         
-        # Get matched states
-        matched_states = self.results['comparisons']['state_similarity']['matched_states']
-        
-        # Compute transition matrices
+        # Compute transition matrices directly
         affair_trans = self._compute_transition_matrix(
             self.results['sequences']['affair']
         )
@@ -477,10 +463,9 @@ class BrainStateAnalysis:
             self.results['sequences']['paranoia']
         )
         
-        # Reorder paranoia transitions according to matched states
-        reordered_trans = self._reorder_transitions(
-            paranoia_trans, matched_states
-        )
+        # Since states have been reordered by occupancy,
+        # no need to reorder paranoia transitions
+        reordered_trans = paranoia_trans
         
         # Compare transitions
         transition_comparison = {
@@ -503,23 +488,13 @@ class BrainStateAnalysis:
                 
         # Normalize
         row_sums = transitions.sum(axis=1)
-        transitions = transitions / row_sums[:, np.newaxis]
-        
+        # Handle zero rows
+        nonzero_rows = row_sums > 0
+        if not np.all(nonzero_rows):
+            self.logger.warning(f"Zero rows found in transition matrix: {np.where(~nonzero_rows)[0]}")
+        transitions[nonzero_rows] = transitions[nonzero_rows] / row_sums[nonzero_rows, np.newaxis]
+
         return transitions
-        
-    def _reorder_transitions(self, trans_matrix, matched_states):
-        """Reorder transition matrix according to state matching"""
-        n_states = 3
-        mapping = np.zeros(n_states, dtype=int)
-        for i, j in matched_states:
-            mapping[j] = i
-            
-        reordered = np.zeros_like(trans_matrix)
-        for i in range(n_states):
-            for j in range(n_states):
-                reordered[mapping[i], mapping[j]] = trans_matrix[i, j]
-                
-        return reordered
         
     def _get_state_durations(self, sequences, state_idx):
         """Calculate durations of state occurrences"""
@@ -690,7 +665,7 @@ class StateVisualization:
                 color=self.colors[idx], 
                 linestyle='--',
                 alpha=0.7,
-                label='Paranoia (Reordered)')
+                label='Paranoia')
             
             # Add correlation annotation
             corr = profile['correlation']
@@ -769,7 +744,7 @@ class StateVisualization:
         # Plot paranoia transitions (reordered)
         im2 = ax2.imshow(trans_data['paranoia_reordered'],
                         cmap='coolwarm', vmin=0, vmax=1)
-        ax2.set_title('Paranoia Transitions\n(Reordered)')
+        ax2.set_title('Paranoia Transitions')
         self._format_transition_plot(ax2, im2, include_values=True)
         
         # Plot difference
@@ -800,7 +775,7 @@ class StateVisualization:
         if self.output_dir is not None:
             plt.savefig(self.output_dir / f"{name}.png",
                        dpi=300, bbox_inches='tight')
-            plt.savefig(self.output_dir / f"{name}.pdf",
+            plt.savefig(self.output_dir / f"{name}.svg",
                        bbox_inches='tight')
             plt.close()
 
