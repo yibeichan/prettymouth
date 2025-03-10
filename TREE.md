@@ -9,7 +9,6 @@
 │   ├── 01_postproc.py
 │   ├── 01_postproc.sh
 │   ├── 02_atlas_masked_data.py
-│   ├── 02_get_group_data.py
 │   ├── 02_get_networks.py
 │   ├── 03_extract_parcels.py
 │   ├── 03_get_groups.py
@@ -18,19 +17,12 @@
 │   ├── 04_extract_roi.py
 │   ├── 04_get_group_network.py
 │   ├── 04_get_group_roi.py
-│   ├── 04_group_distance_perm_parcel_pearsonr.py
-│   ├── 04_group_distance_perm_parcel_pearsonr.sh
-│   ├── 04_voxel_distance.py
 │   ├── 04_voxel_distance.sh
 │   ├── 05_event_group_distance_perm_parcel.py
 │   ├── 05_group_hmm_ntw_find_n_states.py
 │   ├── 05_group_hmm_ntw_find_n_states.sh
-│   ├── 05_group_hmm_roi_find_n_states.py
-│   ├── 05_group_hmm_roi_find_n_states.sh
 │   ├── 06_combined_group_hmm_ntw.py
 │   ├── 06_combined_group_hmm_ntw.sh
-│   ├── 06_combined_group_hmm_roi.py
-│   ├── 06_combined_group_hmm_roi.sh
 │   ├── 06_single_group_hmm_ntw.py
 │   ├── 06_single_group_hmm_ntw.sh
 │   ├── 06_single_group_hmm_roi.py
@@ -55,6 +47,7 @@
 │   │   ├── get_character.py
 │   │   └── plot.ipynb
 │   ├── figure2.ipynb
+│   ├── figure3.ipynb
 │   ├── figures.ipynb
 │   ├── test.py
 │   └── utils
@@ -89,5 +82,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 83 files
+6 directories, 76 files
 ```
