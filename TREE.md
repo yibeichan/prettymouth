@@ -48,6 +48,7 @@
 │   │   └── plot.ipynb
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
+│   ├── figure4.ipynb
 │   ├── figures.ipynb
 │   ├── test.py
 │   └── utils
@@ -82,5 +83,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 76 files
+6 directories, 77 files
 ```
