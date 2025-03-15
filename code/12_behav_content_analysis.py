@@ -13,7 +13,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class BehavioralContentAnalysis:
-    def __init__(self, output_dir: Path, data_dir: Path, n_trim_TRs: int = 14):
+    def __init__(self, output_dir: Path, data_dir: Path, n_trim_TRs: int = 14, coding_type: str = 'treatment'):
         """
         Initialize behavioral analysis pipeline
         
@@ -25,11 +25,17 @@ class BehavioralContentAnalysis:
             Directory containing story annotations and other data files
         n_trim_TRs : int
             Number of TRs to trim from the beginning of each sequence
+        coding_type : str
+            Type of coding to use for categorical variables ('treatment' or 'deviation')
         """
         self.output_dir = Path(output_dir)
         self.data_dir = Path(data_dir)
         self.n_trim_TRs = n_trim_TRs
         self.data_loaded = False
+        self.coding_type = coding_type
+        
+        if coding_type not in ['treatment', 'deviation']:
+            raise ValueError("coding_type must be either 'treatment' or 'deviation'")
         
         # Define content features to use (same as brain analysis)
         self.feature_names = [
@@ -209,9 +215,22 @@ class BehavioralContentAnalysis:
             all_responses = np.concatenate([self.affair_responses, self.paranoia_responses])
             model_data['response'] = all_responses.flatten().astype(np.int32)
             
-            # Build feature matrix with explicit types
-            group_dummies = pd.get_dummies(model_data['group'], drop_first=True)
-            paranoia_col = group_dummies.columns[0]
+            # Build feature matrix with explicit types based on coding type
+            if self.coding_type == 'treatment':
+                # Treatment coding (default, one group as reference)
+                group_dummies = pd.get_dummies(model_data['group'], drop_first=True)
+                group_contrast_col = group_dummies.columns[0]  # Should be 'paranoia'
+                print(f"Using treatment coding with reference group: affair")
+            else:
+                # Deviation coding (compare each group to the grand mean)
+                from patsy import dmatrix
+                formula = "C(group, Sum)"
+                group_dummies = pd.DataFrame(
+                    dmatrix(formula, model_data, return_type='dataframe'),
+                    index=model_data.index
+                ).iloc[:, 1:]  # Drop intercept
+                group_contrast_col = group_dummies.columns[0]  # Should be something like 'C(group, Sum)[S.affair]'
+                print(f"Using deviation coding with contrast: {group_contrast_col}")
             
             # Create design matrix with constant
             exog = sm.add_constant(group_dummies).astype(np.float64)
@@ -225,7 +244,7 @@ class BehavioralContentAnalysis:
             # Add group interactions
             for feature in feature_cols:
                 feature_matrix[f'group_{feature}_interaction'] = (
-                    feature_matrix[paranoia_col] * feature_matrix[feature]
+                    feature_matrix[group_contrast_col] * feature_matrix[feature]
                 ).astype(np.float64)
             
             # Add more debug information
@@ -233,6 +252,8 @@ class BehavioralContentAnalysis:
             print("Response values:", np.unique(model_data['response']))
             print("Response range:", model_data['response'].min(), "to", model_data['response'].max())
             print("Group distribution:", model_data['group'].value_counts())
+            print(f"Coding type: {self.coding_type}")
+            print(f"Group columns: {group_dummies.columns.tolist()}")
             
             # Verify no missing values
             missing_data = model_data.isnull().sum()
@@ -259,8 +280,32 @@ class BehavioralContentAnalysis:
             print("\nBasic GLMM converged successfully!")
             print(basic_result.summary())
             
-            # Fit full model
+            # Fit full model - FIX: Ensure feature_matrix is a DataFrame, not ndarray
             print("\nFitting full GLMM...")
+            
+            # Convert feature_matrix to DataFrame if it's an ndarray
+            if isinstance(feature_matrix, np.ndarray):
+                print("Converting feature matrix from ndarray to DataFrame...")
+                feature_matrix = pd.DataFrame(
+                    feature_matrix, 
+                    index=model_data.index,
+                    columns=[f"col_{i}" for i in range(feature_matrix.shape[1])]
+                )
+            
+            # Ensure subject_dummies is a DataFrame
+            if isinstance(subject_dummies, np.ndarray):
+                subject_dummies = pd.DataFrame(
+                    subject_dummies,
+                    index=model_data.index,
+                    columns=[f"subject_{i}" for i in range(subject_dummies.shape[1])]
+                )
+            
+            # Print debug info about matrices
+            print(f"Feature matrix type: {type(feature_matrix)}")
+            print(f"Feature matrix shape: {feature_matrix.shape}")
+            print(f"Subject dummies type: {type(subject_dummies)}")
+            print(f"Subject dummies shape: {subject_dummies.shape}")
+            
             full_model = BinomialBayesMixedGLM(
                 model_data['response'],
                 feature_matrix,
@@ -270,21 +315,41 @@ class BehavioralContentAnalysis:
             )
             full_result = full_model.fit_vb()
             
+            # After fitting the model
+            if not getattr(full_result, 'converged', True):
+                print("WARNING: Full model did not converge!")
+
+            # Check for extreme parameter values - FIX: Handle NumPy array case
+            if hasattr(full_result.params, 'items'):
+                # If params is a dictionary-like object with items() method
+                extreme_params = [name for name, val in full_result.params.items() if abs(val) > 10]
+                if extreme_params:
+                    print(f"WARNING: Extreme parameter values found: {extreme_params}")
+            else:
+                # If params is a NumPy array
+                extreme_values = np.where(np.abs(full_result.params) > 10)[0]
+                if len(extreme_values) > 0:
+                    print(f"WARNING: Extreme parameter values found at indices: {extreme_values}")
+                
             print("\nFull GLMM converged successfully!")
-            results = self._prepare_glmm_results(full_result, basic_result, feature_matrix)
+            results = self._prepare_glmm_results(full_result, basic_result, feature_matrix, group_contrast_col)
             return results
             
         except Exception as e:
             print(f"\n!!! ERROR fitting GLMM !!!")
             print(f"Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()  # Print full traceback for debugging
             print("\nDebug information:")
-            print(f"Feature matrix shape: {feature_matrix.shape}")
+            print(f"Feature matrix type: {type(feature_matrix)}")
+            if hasattr(feature_matrix, 'shape'):
+                print(f"Feature matrix shape: {feature_matrix.shape}")
             print(f"Response shape: {model_data['response'].shape}")
             print(f"Number of subjects: {n_total_subjects}")
             print(f"Number of timepoints: {n_timepoints}")
             return None
 
-    def _prepare_glmm_results(self, full_result, basic_result, feature_matrix):
+    def _prepare_glmm_results(self, full_result, basic_result, feature_matrix, group_contrast_col):
         """Helper to prepare GLMM results"""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
         
@@ -337,6 +402,84 @@ class BehavioralContentAnalysis:
             model_comparison[f'{name}_dic'] = getattr(model, 'dic', None)
             model_comparison[f'{name}_vb_elbo'] = getattr(model, 'vb_elbo', None)
         
+        # Calculate group-specific effects for each feature
+        group_specific_effects = {}
+        feature_cols = [col for col in feature_names if col not in ['const', group_contrast_col] and not col.startswith('group_')]
+        
+        for feature in feature_cols:
+            # Check if corresponding interaction term exists
+            interaction_col = f'group_{feature}_interaction'
+            if interaction_col in params.index:
+                # Get main effect parameters
+                feature_coef = params.get(feature, 0)
+                interaction_coef = params.get(interaction_col, 0)
+                
+                # Get standard deviations
+                feature_sd = posterior_sds.get(feature, 0)
+                interaction_sd = posterior_sds.get(interaction_col, 0)
+                
+                # Calculate effects for each group
+                if self.coding_type == 'treatment':
+                    # Treatment coding: reference = affair, comparison = paranoia
+                    ref_effect = feature_coef
+                    comp_effect = feature_coef + interaction_coef
+                    ref_group = 'affair'
+                    comp_group = 'paranoia'
+                else:
+                    # Deviation coding: both effects are deviations from grand mean
+                    grand_mean = feature_coef
+                    ref_effect = grand_mean - interaction_coef/2  # affair
+                    comp_effect = grand_mean + interaction_coef/2  # paranoia
+                    ref_group = 'affair'
+                    comp_group = 'paranoia'
+                
+                ref_effect_or = np.exp(ref_effect)
+                comp_effect_or = np.exp(comp_effect)
+                
+                # Calculate approximate combined SD for comparison group
+                combined_sd = np.sqrt(feature_sd**2 + interaction_sd**2)
+                
+                # Calculate HDIs
+                z_score = stats.norm.ppf((1 + 0.95) / 2)  # 95% HDI
+                
+                # Reference group HDI
+                ref_or_lower = np.exp(ref_effect - z_score * feature_sd)
+                ref_or_upper = np.exp(ref_effect + z_score * feature_sd)
+                
+                # Comparison group HDI
+                comp_or_lower = np.exp(comp_effect - z_score * combined_sd)
+                comp_or_upper = np.exp(comp_effect + z_score * combined_sd)
+                
+                # Calculate probabilities
+                p_pos_ref = 1 - stats.norm.cdf(0, loc=ref_effect, scale=feature_sd)
+                p_pos_comp = 1 - stats.norm.cdf(0, loc=comp_effect, scale=combined_sd)
+                
+                # Probability that effect is stronger in comparison group
+                p_diff = stats.norm.cdf(0, loc=interaction_coef, scale=interaction_sd)
+                if interaction_coef > 0:
+                    p_diff = 1 - p_diff
+                
+                # Store results
+                group_specific_effects[feature] = {
+                    'main': {
+                        ref_group: {
+                            'odds_ratio': float(ref_effect_or),
+                            'lower': float(ref_or_lower),
+                            'upper': float(ref_or_upper),
+                            'prob_positive': float(p_pos_ref)
+                        },
+                        comp_group: {
+                            'odds_ratio': float(comp_effect_or),
+                            'lower': float(comp_or_lower),
+                            'upper': float(comp_or_upper),
+                            'prob_positive': float(p_pos_comp)
+                        },
+                        'diff_between_groups': {
+                            'prob_stronger_in_comparison': float(p_diff)
+                        }
+                    }
+                }
+        
         return {
             'model_results': full_result,
             'summary': str(full_result.summary()),
@@ -345,12 +488,14 @@ class BehavioralContentAnalysis:
             'prob_nonzero': prob_nonzero.to_dict(),
             'conf_int': conf_int.to_dict(),
             'vif': vif_data.to_dict(),
-            'model_comparison': model_comparison
+            'model_comparison': model_comparison,
+            'group_specific_effects': group_specific_effects,
+            'coding_type': self.coding_type
         }
 
     def save_results(self, results, filename):
         """Save analysis results"""
-        save_dir = self.output_dir / '12_behavioral_analysis'
+        save_dir = self.output_dir / '12_behavioral_analysis' / self.coding_type
         save_dir.mkdir(exist_ok=True)
         
         print(f"\n=== Saving results to {save_dir / filename}.json ===")
@@ -388,7 +533,9 @@ class BehavioralContentAnalysis:
                     'posterior_sds': convert_to_serializable(value['posterior_sds']),
                     'prob_nonzero': convert_to_serializable(value['prob_nonzero']),
                     'confidence_intervals': convert_to_serializable(value['conf_int']),
-                    'model_summary': str(value['summary'])
+                    'group_specific_effects': convert_to_serializable(value.get('group_specific_effects', {})),
+                    'model_summary': str(value['summary']),
+                    'coding_type': value['coding_type']
                 }
             else:
                 save_results[key] = convert_to_serializable(value)
@@ -429,7 +576,8 @@ def main():
     # Initialize analysis
     analysis = BehavioralContentAnalysis(
         output_dir=output_dir,
-        data_dir=data_dir
+        data_dir=data_dir,
+        coding_type='deviation'
     )
 
     # Run analysis pipeline

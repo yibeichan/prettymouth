@@ -17,11 +17,13 @@ from statsmodels.genmod.bayes_mixed_glm import BinomialBayesMixedGLM
 warnings.filterwarnings('ignore')
 
 class HierarchicalStateAnalysis:
-    def __init__(self, data_dir, output_dir, n_cv_folds=5):
+    def __init__(self, data_dir, output_dir, n_cv_folds=5, coding_type="deviation", reference_group="affair"):
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.n_cv_folds = n_cv_folds
         self.data_validated = False
+        self.coding_type = coding_type
+        self.reference_group = reference_group
         
     def load_data(self):
         """Load all necessary data and prepare for analysis"""
@@ -318,7 +320,15 @@ class HierarchicalStateAnalysis:
                 # Prepare model data
                 model_data = combined_data.copy()
                 model_data['feature'] = model_data[feature]
-                model_data['group_coded'] = (model_data['group'] == 'affair').astype(int)
+                # model_data['group_coded'] = (model_data['group'] == 'affair').astype(int)
+                # model_data['group_coded'] = (model_data['group'] == 'paranoia').astype(int)
+                if self.coding_type == "deviation":
+                    model_data['group_coded'] = np.where(model_data['group'] == 'affair', 0.5, -0.5)
+                elif self.coding_type == "treatment":
+                    if self.reference_group == "affair":
+                        model_data['group_coded'] = np.where(model_data['group'] == 'affair', 0, 1)
+                    elif self.reference_group == "paranoia":
+                        model_data['group_coded'] = np.where(model_data['group'] == 'paranoia', 0, 1)
                 
                 # Print model data info
                 print(f"Target state values:", model_data['target_state'].value_counts())
@@ -349,7 +359,7 @@ class HierarchicalStateAnalysis:
                     print("Model fit completed")
                     
                     # Prepare results using helper method
-                    feature_results[feature] = self._prepare_glmm_results(results, design_matrix)
+                    feature_results[feature] = self._prepare_glmm_results(results, design_matrix, coding_type=self.coding_type)
                     print(f"Successfully processed feature {feature}")
                     
                 except Exception as e:
@@ -373,9 +383,9 @@ class HierarchicalStateAnalysis:
             'group_stats': self._compute_group_stats(combined_data, state_affair, state_paranoia)
         }
 
-    def _prepare_glmm_results(self, results, design_matrix, probability_mass=0.95, rope_width=0.1):
+    def _prepare_glmm_results(self, results, design_matrix, probability_mass=0.95, rope_width=0.1, coding_type="deviation"):
         """
-        Process and organize Bayesian GLMM results with appropriate Bayesian metrics
+        Process and organize Bayesian GLMM results for deviation coding
         
         Parameters:
         -----------
@@ -387,11 +397,14 @@ class HierarchicalStateAnalysis:
             Probability mass for highest density intervals
         rope_width : float, optional (default=0.1)
             Width of Region of Practical Equivalence for effect size interpretation
+        coding_type : str, optional (default="deviation")
+            Type of coding used ("deviation" or "treatment")
             
         Returns:
         --------
         dict
-            Dictionary containing organized Bayesian results and metrics
+            Dictionary containing organized Bayesian results and metrics with correct interpretation
+            for the coding scheme used
         """
         # Get feature names
         feature_names = design_matrix.columns
@@ -417,31 +430,21 @@ class HierarchicalStateAnalysis:
         hdi_upper = fe_params + z_score * fe_sds
         
         # Calculate ROPE probabilities (Region of Practical Equivalence)
-        # Probability that parameter is within ROPE (practically equivalent to zero)
         prob_in_rope = (stats.norm.cdf(rope_width, loc=fe_params, scale=fe_sds) - 
                         stats.norm.cdf(-rope_width, loc=fe_params, scale=fe_sds))
-        # Probability that parameter is practically positive
         prob_practical_pos = 1 - stats.norm.cdf(rope_width, loc=fe_params, scale=fe_sds)
-        # Probability that parameter is practically negative
         prob_practical_neg = stats.norm.cdf(-rope_width, loc=fe_params, scale=fe_sds)
         
         # Calculate approximate Bayes factors
-        # BF10: Evidence for alternative vs null (parameter ≠ 0)
-        # Using Savage-Dickey density ratio approximation
-        null_density = stats.norm.pdf(0, loc=0, scale=1)  # Prior density at null
-        posterior_density = stats.norm.pdf(0, loc=fe_params, scale=fe_sds)  # Posterior density at null
+        null_density = stats.norm.pdf(0, loc=0, scale=1)
+        posterior_density = stats.norm.pdf(0, loc=fe_params, scale=fe_sds)
         bayes_factors = np.where(
-            posterior_density < 1e-10,  # Avoid division by zero
-            1000,  # Cap extremely large Bayes factors
+            posterior_density < 1e-10,
+            1000,
             null_density / posterior_density
         )
         
-        # Calculate odds ratios and their HDIs (for interpretation)
-        odds_ratios = np.exp(fe_params)
-        odds_ratio_lower = np.exp(hdi_lower)
-        odds_ratio_upper = np.exp(hdi_upper)
-        
-        # Convert everything to dictionaries with proper keys
+        # Convert parameter dictionaries with proper keys
         coef_dict = {name: float(val) for name, val in zip(feature_names, fe_params)}
         sd_dict = {name: float(val) for name, val in zip(feature_names, fe_sds)}
         posterior_prob_dict = {name: float(val) for name, val in zip(feature_names, posterior_prob)}
@@ -468,16 +471,166 @@ class HierarchicalStateAnalysis:
             name: float(bf) for name, bf in zip(feature_names, bayes_factors)
         }
         
-        odds_ratio_dict = {
-            name: {
-                'odds_ratio': float(or_val),
-                'lower': float(or_l),
-                'upper': float(or_u)
+        # Calculate odds ratios differently based on coding scheme
+        odds_ratio_dict = {}
+        
+        # For each parameter, calculate its odds ratio 
+        for i, name in enumerate(feature_names):
+            param_value = fe_params[i]
+            param_lower = hdi_lower[i]
+            param_upper = hdi_upper[i]
+            
+            # For deviation coding, the interpretation is different
+            if coding_type == "deviation" and name == "group":
+                # In deviation coding (-0.5/+0.5), the group coefficient represents
+                # twice the difference between one group and the grand mean
+                # To get odds ratio for affair vs paranoia, we need exp(2*group_coef)
+                odds_ratio = np.exp(2 * param_value)
+                or_lower = np.exp(2 * param_lower)
+                or_upper = np.exp(2 * param_upper)
+                
+                # Store with special note
+                odds_ratio_dict[name] = {
+                    'odds_ratio': float(odds_ratio), 
+                    'lower': float(or_lower),
+                    'upper': float(or_upper),
+                    'note': 'This represents odds ratio between groups (not vs reference)'
+                }
+            else:
+                # Standard interpretation for other parameters
+                odds_ratio = np.exp(param_value)
+                or_lower = np.exp(param_lower)
+                or_upper = np.exp(param_upper)
+                
+                odds_ratio_dict[name] = {
+                    'odds_ratio': float(odds_ratio),
+                    'lower': float(or_lower),
+                    'upper': float(or_upper)
+                }
+        
+        # Calculate group-specific effects (different approach for deviation coding)
+        group_specific_effects = {}
+        
+        if coding_type == "deviation":
+            # For deviation coding, calculate effects for each group
+            # The intercept is the grand mean
+            # Group effects are +/- half the group coefficient
+            
+            # Get coefficients
+            intercept = coef_dict.get('const', 0)
+            group_coef = coef_dict.get('group', 0)
+            feature_coef = coef_dict.get('feature', 0)
+            interaction_coef = coef_dict.get('interaction', 0)
+            
+            # Get SDs for uncertainty calculation
+            intercept_sd = sd_dict.get('const', 0)
+            group_sd = sd_dict.get('group', 0)
+            feature_sd = sd_dict.get('feature', 0)
+            interaction_sd = sd_dict.get('interaction', 0)
+            
+            # Calculate effects for affair group (coded as +0.5)
+            affair_effect = feature_coef + (interaction_coef * 0.5)
+            # Calculate effects for paranoia group (coded as -0.5)
+            paranoia_effect = feature_coef - (interaction_coef * 0.5)
+            
+            # Calculate approximate SDs for these effects
+            # This is approximate and assumes independence between parameters
+            affair_sd = np.sqrt(feature_sd**2 + (0.5 * interaction_sd)**2)
+            paranoia_sd = np.sqrt(feature_sd**2 + (0.5 * interaction_sd)**2)
+            
+            # Calculate odds ratios and HDIs
+            affair_or = np.exp(affair_effect)
+            paranoia_or = np.exp(paranoia_effect)
+            
+            affair_or_lower = np.exp(affair_effect - z_score * affair_sd)
+            affair_or_upper = np.exp(affair_effect + z_score * affair_sd)
+            
+            paranoia_or_lower = np.exp(paranoia_effect - z_score * paranoia_sd)
+            paranoia_or_upper = np.exp(paranoia_effect + z_score * paranoia_sd)
+            
+            # Calculate probabilities of positive effects
+            p_pos_affair = 1 - stats.norm.cdf(0, loc=affair_effect, scale=affair_sd)
+            p_pos_paranoia = 1 - stats.norm.cdf(0, loc=paranoia_effect, scale=paranoia_sd)
+            
+            # Probability that effect is stronger in affair group
+            # This is P(affair_effect > paranoia_effect)
+            # = P(interaction_coef > 0) since affair_effect - paranoia_effect = interaction_coef
+            p_diff = 1 - stats.norm.cdf(0, loc=interaction_coef, scale=interaction_sd)
+            
+            # Store in group_specific_effects with clear naming for deviation coding
+            group_specific_effects['main'] = {
+                'affair_group': {
+                    'odds_ratio': float(affair_or),
+                    'lower': float(affair_or_lower),
+                    'upper': float(affair_or_upper),
+                    'prob_positive': float(p_pos_affair)
+                },
+                'paranoia_group': {
+                    'odds_ratio': float(paranoia_or),
+                    'lower': float(paranoia_or_lower),
+                    'upper': float(paranoia_or_upper),
+                    'prob_positive': float(p_pos_paranoia)
+                },
+                'diff_between_groups': {
+                    'prob_stronger_in_affair': float(p_diff)
+                }
             }
-            for name, or_val, or_l, or_u in zip(
-                feature_names, odds_ratios, odds_ratio_lower, odds_ratio_upper
-            )
-        }
+        else:
+            # Original treatment coding implementation
+            # Get main effect parameters
+            feature_coef = coef_dict.get('feature', 0)
+            interaction_coef = coef_dict.get('interaction', 0)
+
+            # Get standard deviations
+            feature_sd = sd_dict.get('feature', 0)
+            interaction_sd = sd_dict.get('interaction', 0)
+
+            # Calculate reference group effect (just the feature coefficient)
+            ref_effect = feature_coef
+            ref_effect_or = np.exp(ref_effect)
+
+            # Calculate comparison group effect (feature + interaction)
+            comp_effect = feature_coef + interaction_coef
+            comp_effect_or = np.exp(comp_effect)
+
+            # Calculate approximate combined SD for comparison group
+            combined_sd = np.sqrt(feature_sd**2 + interaction_sd**2)
+
+            # Calculate HDIs for odds ratios
+            ref_or_lower = np.exp(ref_effect - z_score * feature_sd)
+            ref_or_upper = np.exp(ref_effect + z_score * feature_sd)
+
+            # Comparison group HDI 
+            comp_or_lower = np.exp(comp_effect - z_score * combined_sd)
+            comp_or_upper = np.exp(comp_effect + z_score * combined_sd)
+
+            # Calculate probabilities
+            p_pos_ref = 1 - stats.norm.cdf(0, loc=ref_effect, scale=feature_sd)
+            p_pos_comp = 1 - stats.norm.cdf(0, loc=comp_effect, scale=combined_sd)
+
+            # Probability that effect is stronger in comparison group
+            p_diff = stats.norm.cdf(0, loc=interaction_coef, scale=interaction_sd)
+            if interaction_coef > 0:
+                p_diff = 1 - p_diff
+
+            # Store in group_specific_effects
+            group_specific_effects['main'] = {
+                'reference_group': {
+                    'odds_ratio': float(ref_effect_or),
+                    'lower': float(ref_or_lower),
+                    'upper': float(ref_or_upper),
+                    'prob_positive': float(p_pos_ref)
+                },
+                'comparison_group': {
+                    'odds_ratio': float(comp_effect_or),
+                    'lower': float(comp_or_lower),
+                    'upper': float(comp_or_upper),
+                    'prob_positive': float(p_pos_comp)
+                },
+                'diff_between_groups': {
+                    'prob_stronger_in_comparison': float(p_diff)
+                }
+            }
         
         # Prepare results dictionary
         results_dict = {
@@ -486,29 +639,33 @@ class HierarchicalStateAnalysis:
             'posterior_sds': sd_dict,
             
             # Directional probabilities
-            'posterior_prob': posterior_prob_dict,  # Probability parameter is non-zero in the direction of the mean
-            'prob_positive': pos_prob_dict,         # Probability parameter is > 0
-            'prob_negative': neg_prob_dict,         # Probability parameter is < 0
+            'posterior_prob': posterior_prob_dict,
+            'prob_positive': pos_prob_dict,
+            'prob_negative': neg_prob_dict,
             
             # Interval estimates
-            'hdi': hdi_dict,                        # Highest Density Interval
-            'probability_mass': probability_mass,   # Probability mass within HDI
+            'hdi': hdi_dict,
+            'probability_mass': probability_mass,
             
             # Practical significance metrics
-            'rope': rope_dict,                      # Region of Practical Equivalence metrics
-            'rope_width': rope_width,               # Width of ROPE
+            'rope': rope_dict,
+            'rope_width': rope_width,
             
             # Evidence metrics
-            'bayes_factors': bayes_factor_dict,     # Approximate Bayes factors
+            'bayes_factors': bayes_factor_dict,
             
             # Interpretable effect sizes
-            'odds_ratios': odds_ratio_dict,         # Odds ratios with HDIs
+            'odds_ratios': odds_ratio_dict,
+            'group_specific_effects': group_specific_effects,
             
             # Model diagnostics
             'model_summary': str(results.summary()),
             'convergence': getattr(results, 'converged', None),
             'n_obs': len(design_matrix),
-            'effective_samples': getattr(results, 'n_eff', None)
+            'effective_samples': getattr(results, 'n_eff', None),
+            
+            # Coding scheme info
+            'coding_scheme': coding_type
         }
         
         # Add evidence categories based on Bayes factors
@@ -1037,7 +1194,7 @@ class HierarchicalStateAnalysis:
         
         return complete_results
     
-    def save_results(self, results, state_affair: int, state_paranoia: int):
+    def save_results(self, results, state_affair: int, state_paranoia: int, coding_type: str):
         """
         Save complete Bayesian analysis results to files
         
@@ -1050,66 +1207,139 @@ class HierarchicalStateAnalysis:
         state_paranoia : int
             State index for paranoia group
         """
-        # Create output directory
-        out_dir = self.output_dir / "11_brain_content_analysis" / f"state_affair_{state_affair}_state_paranoia_{state_paranoia}"
+        # Determine coding scheme from results
+        if 'main_analysis' in results and 'feature_results' in results['main_analysis']:
+            # Check first feature's results for coding scheme info
+            first_feature = next(iter(results['main_analysis']['feature_results'].values()), {})
+            coding_type = first_feature.get('coding_scheme', "treatment")
+        
+        # Create output directory with coding type
+        folder_name = f"state_affair_{state_affair}_state_paranoia_{state_paranoia}_coding_{coding_type}"
+        
+        out_dir = self.output_dir / "11_brain_content_analysis" / folder_name
         os.makedirs(out_dir, exist_ok=True)
         
-        # Format timestamp for filenames
-        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        print(f"Saving results to {out_dir} with coding scheme: {coding_type}")
         
         # Save main analysis results if available
         if 'feature_results' in results.get('main_analysis', {}):
-            # The nested dictionary structure won't convert directly to DataFrame
-            # Extract key metrics into a more tabular format
-            feature_names = []
-            coefs = []
-            prob_directions = []
-            odds_ratios = []
+            # Create dataframe with appropriate columns based on coding scheme
+            df_data = {
+                'feature': []
+            }
             
+            # Add standard columns
+            for col in ['coefficient', 'probability_direction', 'odds_ratio']:
+                df_data[col] = []
+            
+            # Add coding-specific columns
+            if coding_type == "deviation":
+                # For deviation coding
+                df_data.update({
+                    'affair_odds_ratio': [],
+                    'paranoia_odds_ratio': [],
+                    'affair_prob_positive': [],
+                    'paranoia_prob_positive': [],
+                    'prob_stronger_in_affair': []
+                })
+            else:
+                # For treatment coding
+                df_data.update({
+                    'reference_group_odds_ratio': [],
+                    'comparison_group_odds_ratio': [],
+                    'reference_group_prob_positive': [],
+                    'comparison_group_prob_positive': [],
+                    'prob_stronger_in_comparison': []
+                })
+            
+            # Extract data from results
             for feature, res in results['main_analysis']['feature_results'].items():
-                feature_names.append(feature)
+                df_data['feature'].append(feature)
                 
                 # Get coefficient for group effect if available
                 if 'coefficients' in res and 'group' in res['coefficients']:
-                    coefs.append(res['coefficients']['group'])
+                    df_data['coefficient'].append(res['coefficients']['group'])
                 else:
-                    coefs.append(None)
+                    df_data['coefficient'].append(None)
                     
                 # Get probability of direction
                 if 'posterior_prob' in res and 'group' in res['posterior_prob']:
-                    prob_directions.append(res['posterior_prob']['group'])
+                    df_data['probability_direction'].append(res['posterior_prob']['group'])
                 else:
-                    prob_directions.append(None)
+                    df_data['probability_direction'].append(None)
                     
                 # Get odds ratio
                 if 'odds_ratios' in res and 'group' in res['odds_ratios']:
-                    odds_ratios.append(res['odds_ratios']['group']['odds_ratio'])
+                    df_data['odds_ratio'].append(res['odds_ratios']['group']['odds_ratio'])
                 else:
-                    odds_ratios.append(None)
+                    df_data['odds_ratio'].append(None)
+                
+                # Extract group-specific effects based on coding scheme
+                if 'group_specific_effects' in res and 'main' in res['group_specific_effects']:
+                    effects = res['group_specific_effects']['main']
+                    
+                    if coding_type == "deviation":
+                        # Extract deviation coding specific fields
+                        if 'affair_group' in effects and 'paranoia_group' in effects:
+                            df_data['affair_odds_ratio'].append(effects['affair_group']['odds_ratio'])
+                            df_data['paranoia_odds_ratio'].append(effects['paranoia_group']['odds_ratio'])
+                            df_data['affair_prob_positive'].append(effects['affair_group']['prob_positive'])
+                            df_data['paranoia_prob_positive'].append(effects['paranoia_group']['prob_positive'])
+                            df_data['prob_stronger_in_affair'].append(
+                                effects['diff_between_groups'].get('prob_stronger_in_affair', None))
+                        else:
+                            df_data['affair_odds_ratio'].append(None)
+                            df_data['paranoia_odds_ratio'].append(None)
+                            df_data['affair_prob_positive'].append(None)
+                            df_data['paranoia_prob_positive'].append(None)
+                            df_data['prob_stronger_in_affair'].append(None)
+                    else:
+                        # Extract treatment coding specific fields
+                        if 'reference_group' in effects and 'comparison_group' in effects:
+                            df_data['reference_group_odds_ratio'].append(effects['reference_group']['odds_ratio'])
+                            df_data['comparison_group_odds_ratio'].append(effects['comparison_group']['odds_ratio'])
+                            df_data['reference_group_prob_positive'].append(effects['reference_group']['prob_positive'])
+                            df_data['comparison_group_prob_positive'].append(effects['comparison_group']['prob_positive'])
+                            df_data['prob_stronger_in_comparison'].append(
+                                effects['diff_between_groups'].get('prob_stronger_in_comparison', None))
+                        else:
+                            df_data['reference_group_odds_ratio'].append(None)
+                            df_data['comparison_group_odds_ratio'].append(None)
+                            df_data['reference_group_prob_positive'].append(None)
+                            df_data['comparison_group_prob_positive'].append(None)
+                            df_data['prob_stronger_in_comparison'].append(None)
+                else:
+                    # Handle missing effects data
+                    if coding_type == "deviation":
+                        df_data['affair_odds_ratio'].append(None)
+                        df_data['paranoia_odds_ratio'].append(None)
+                        df_data['affair_prob_positive'].append(None)
+                        df_data['paranoia_prob_positive'].append(None)
+                        df_data['prob_stronger_in_affair'].append(None)
+                    else:
+                        df_data['reference_group_odds_ratio'].append(None)
+                        df_data['comparison_group_odds_ratio'].append(None)
+                        df_data['reference_group_prob_positive'].append(None)
+                        df_data['comparison_group_prob_positive'].append(None)
+                        df_data['prob_stronger_in_comparison'].append(None)
             
-            # Create DataFrame
-            main_results_df = pd.DataFrame({
-                'feature': feature_names,
-                'coefficient': coefs,
-                'probability_direction': prob_directions,
-                'odds_ratio': odds_ratios
-            })
-            
-            # Save to CSV
-            main_results_df.to_csv(out_dir / f'main_analysis_results_{timestamp}.csv', index=False)
-        
+            # Create and save DataFrame
+            main_results_df = pd.DataFrame(df_data)
+            main_results_df.to_csv(out_dir / f'main_analysis_results.csv', index=False)
+            print(f"Saved main analysis results with columns: {main_results_df.columns.tolist()}")
+
         # Save cross-validation results if available
         cv_results = results.get('cross_validation', {})
         
         if 'subject_cv' in cv_results:
             # Convert list of dicts to DataFrame
             subject_cv_df = pd.DataFrame(cv_results['subject_cv'])
-            subject_cv_df.to_csv(out_dir / f'subject_cv_results_{timestamp}.csv', index=False)
+            subject_cv_df.to_csv(out_dir / f'subject_cv_results.csv', index=False)
         
         if 'temporal_cv' in cv_results:
             # Convert list of dicts to DataFrame
             temporal_cv_df = pd.DataFrame(cv_results['temporal_cv'])
-            temporal_cv_df.to_csv(out_dir / f'temporal_cv_results_{timestamp}.csv', index=False)
+            temporal_cv_df.to_csv(out_dir / f'temporal_cv_results.csv', index=False)
         
         # Save Bayesian comparison results if available
         if 'bayesian_multiple_comparison' in results.get('main_analysis', {}):
@@ -1125,7 +1355,7 @@ class HierarchicalStateAnalysis:
                         for feat in bayes_comp['posterior_probs'].keys()
                     ]
                 })
-                bayes_df.to_csv(out_dir / f'bayesian_comparison_{timestamp}.csv', index=False)
+                bayes_df.to_csv(out_dir / f'bayesian_comparison.csv', index=False)
         
         # Convert metadata timestamp to string before saving
         if 'metadata' in results:
@@ -1135,6 +1365,7 @@ class HierarchicalStateAnalysis:
             
             # Add analysis type information
             metadata['analysis_type'] = 'bayesian_glmm'
+            metadata['coding_scheme'] = coding_type
             metadata['bayes_info'] = {
                 'model': 'BinomialBayesMixedGLM',
                 'inference': 'MAP (Maximum A Posteriori)',
@@ -1142,7 +1373,7 @@ class HierarchicalStateAnalysis:
             }
             
             # Save metadata as JSON
-            with open(out_dir / f'analysis_metadata_{timestamp}.json', 'w') as f:
+            with open(out_dir / f'analysis_metadata.json', 'w') as f:
                 json.dump(metadata, f, indent=2)
 
         # Prepare complete output dictionary
@@ -1157,7 +1388,8 @@ class HierarchicalStateAnalysis:
                     'affair': self.affair_sequences.shape[0],
                     'paranoia': self.paranoia_sequences.shape[0]
                 },
-                'analysis_type': 'bayesian_glmm'
+                'analysis_type': 'bayesian_glmm',
+                'coding_scheme': coding_type
             },
             'main_analysis': results['main_analysis'],
             'cross_validation': results['cross_validation']
@@ -1166,7 +1398,7 @@ class HierarchicalStateAnalysis:
         # Save complete results as compressed numpy archive
         try:
             np.savez_compressed(
-                out_dir / f'hierarchical_analysis_results_{timestamp}.npz',
+                out_dir / f'hierarchical_analysis_results.npz',
                 **output_dict
             )
         except Exception as e:
@@ -1178,7 +1410,7 @@ class HierarchicalStateAnalysis:
                 'simplified_results': True
             }
             np.savez_compressed(
-                out_dir / f'hierarchical_analysis_results_simplified_{timestamp}.npz',
+                out_dir / f'hierarchical_analysis_results_simplified.npz',
                 **simplified_dict
             )
             
@@ -1198,7 +1430,7 @@ class HierarchicalStateAnalysis:
                     return obj
             
             json_safe_dict = convert_for_json(output_dict)
-            with open(out_dir / f'hierarchical_analysis_results_{timestamp}.json', 'w') as f:
+            with open(out_dir / f'hierarchical_analysis_results.json', 'w') as f:
                 json.dump(json_safe_dict, f, indent=2)
         except Exception as e:
             print(f"Error saving JSON results: {str(e)}")
@@ -1212,20 +1444,26 @@ def main():
     data_dir = os.path.join(scratch_dir, 'data', 'stimuli')
     
     state_mapping = {"affair_to_paranoia": {0:1, 1:2, 2:0}, "paranoia_to_affair": {1:0, 2:1, 0:2}}
-    affair_state = 1
+    # state_mapping = {"affair_to_paranoia": {0:0, 1:1, 2:2}, "paranoia_to_affair": {0:0, 1:1, 2:2}}
+    affair_state = 0
+    coding_type = "deviation"
+    reference_group = "affair"  # This is needed even with deviation coding
     paranoia_state = state_mapping["affair_to_paranoia"][affair_state]
-    # Initialize analysis
+    
+    # Initialize analysis with coding_type and reference_group
     analysis = HierarchicalStateAnalysis(
         data_dir=data_dir,
         output_dir=output_dir,
-        n_cv_folds=5
+        n_cv_folds=5,
+        coding_type=coding_type,
+        reference_group=reference_group
     )
     
     try:
         # Load and validate data
         analysis.load_data()
         
-        # Run enhanced analysis pipeline
+        # Run enhanced analysis pipeline - don't pass coding_type and reference_group here
         results = analysis.run_complete_analysis(
             state_affair=affair_state,
             state_paranoia=paranoia_state
@@ -1236,7 +1474,7 @@ def main():
         print("Bayesian multiple comparison:", results['main_analysis']['bayesian_multiple_comparison'])
         print("Cross-validation results:", results['cross_validation'])
         # Save results
-        analysis.save_results(results, state_affair=affair_state, state_paranoia=paranoia_state)
+        analysis.save_results(results, state_affair=affair_state, state_paranoia=paranoia_state, coding_type=coding_type)
         
         print("Analysis completed successfully!")
         return results
