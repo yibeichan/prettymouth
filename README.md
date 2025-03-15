@@ -64,6 +64,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -80,12 +81,8 @@
 │   ├── 03_extract_parcels.py
 │   ├── 03_get_groups.py
 │   ├── 03_get_masked_group.py
-│   ├── 03_hmm_group.py
-│   ├── 04_extract_roi.py
 │   ├── 04_get_group_network.py
 │   ├── 04_get_group_roi.py
-│   ├── 04_voxel_distance.sh
-│   ├── 05_event_group_distance_perm_parcel.py
 │   ├── 05_group_hmm_ntw_find_n_states.py
 │   ├── 05_group_hmm_ntw_find_n_states.sh
 │   ├── 06_combined_group_hmm_ntw.py
@@ -150,6 +147,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 77 files
+6 directories, 73 files
 ```
 <!-- TREE_END -->
