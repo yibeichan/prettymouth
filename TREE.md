@@ -43,11 +43,11 @@
 │   │   ├── __init__.py
 │   │   ├── get_character.py
 │   │   └── plot.ipynb
+│   ├── figure1.ipynb
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
 │   ├── figure4.ipynb
 │   ├── figures.ipynb
-│   ├── test.py
 │   └── utils
 │       ├── __init__.py
 │       ├── coflt.py
