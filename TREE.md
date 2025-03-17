@@ -31,6 +31,7 @@
 │   ├── 10_story_content_analysis.py
 │   ├── 11_brain_content_analysis.py
 │   ├── 12_behav_content_analysis.py
+│   ├── 13_glmm_brain_summary.py
 │   ├── __init__.py
 │   ├── behav
 │   │   ├── 01_behav_proc.ipynb
@@ -79,5 +80,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 73 files
+6 directories, 74 files
 ```
