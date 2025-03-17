@@ -996,8 +996,12 @@ class HierarchicalStateAnalysis:
         sorted_probs = np.array(feature_probs)[sorted_idx]
         sorted_features = np.array(feature_names)[sorted_idx]
         
-        # Compute expected FDR at each threshold
-        cumulative_fdr = [(1-p) * (i+1) / (i+1) for i, p in enumerate(sorted_probs)]
+        # Calculate cumulative FDR
+        cumulative_fdr = []
+        for i, p in enumerate(sorted_probs):
+            # Sum of expected false discoveries divided by number of discoveries
+            expected_false_discoveries = sum(1-sorted_probs[:i+1])
+            cumulative_fdr.append(expected_false_discoveries / (i+1))
         
         # Find features passing FDR threshold
         fdr_threshold = 0.05  # Adjust as needed
@@ -1445,7 +1449,7 @@ def main():
     
     state_mapping = {"affair_to_paranoia": {0:1, 1:2, 2:0}, "paranoia_to_affair": {1:0, 2:1, 0:2}}
     # state_mapping = {"affair_to_paranoia": {0:0, 1:1, 2:2}, "paranoia_to_affair": {0:0, 1:1, 2:2}}
-    affair_state = 0
+    affair_state = 2
     coding_type = "deviation"
     reference_group = "affair"  # This is needed even with deviation coding
     paranoia_state = state_mapping["affair_to_paranoia"][affair_state]
