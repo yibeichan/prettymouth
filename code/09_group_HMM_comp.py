@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
 from dotenv import load_dotenv
+from matplotlib.colors import ListedColormap
 # Environment setup
 load_dotenv()
 SCRATCH_DIR = os.getenv('SCRATCH_DIR')
@@ -555,7 +556,7 @@ class StateVisualization:
         """
         self.results = results
         self.output_dir = None
-        self.colors = plt.cm.tab10(np.linspace(0, 1, 3))
+        self.colors = ListedColormap(['#1b9e77', '#d95f02', '#7570b3']).colors
         
         # Update the style to a currently supported one
         try:
@@ -567,14 +568,19 @@ class StateVisualization:
                 self.logger.warning("Could not set seaborn style, using default matplotlib style")
 
         # Set additional style parameters
+        plt.style.use('default')
         plt.rcParams.update({
-            'figure.dpi': 100,
-            'savefig.dpi': 300,
+            'figure.figsize': [8.0, 6.0],
+            'figure.dpi': 300,
             'font.size': 10,
-            'axes.labelsize': 12,
-            'axes.titlesize': 14,
-            'xtick.labelsize': 10,
-            'ytick.labelsize': 10
+            'svg.fonttype': 'none',
+            'figure.titlesize': 9,
+            'axes.titlesize': 9,
+            'axes.labelsize': 8,
+            'ytick.labelsize': 6,
+            'xtick.labelsize': 6,
+            'axes.facecolor': 'white',
+            'figure.facecolor': 'white'
         })
         
     def set_output_directory(self, output_dir):
@@ -584,7 +590,7 @@ class StateVisualization:
         
     def create_main_figure(self):
         """Create main summary figure for publication"""
-        fig = plt.figure(figsize=(15, 18))  # Increased figure height
+        fig = plt.figure(figsize=(10, 12))  # Increased figure height
         
         # Create GridSpec with adjusted height ratios
         gs = GridSpec(7, 3, figure=fig, height_ratios=[1.2, 1.2, 1.8, 1.8, 1.8, 1.65, 1.65])
