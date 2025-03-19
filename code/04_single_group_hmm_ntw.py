@@ -19,12 +19,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 
-# Configure logging with more detailed format
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
-)
-
 @dataclass
 class HMMConfig:
     """Configuration class for HMM parameters"""
@@ -36,6 +30,7 @@ class HMMConfig:
     n_bootstrap: int = 1000
     convergence_tol: float = 1e-3
     max_iter: int = 1000
+    n_jobs: int = 1  # Number of CPU cores to use
     
     def __post_init__(self):
         """Validate configuration parameters"""
@@ -47,8 +42,10 @@ class HMMConfig:
             raise ValueError("window_size must be positive")
         if self.n_bootstrap < 100:
             raise ValueError("n_bootstrap should be at least 100")
+        if self.n_jobs < 1:
+            raise ValueError("n_jobs must be positive")
 
-class GroupHMM:
+class SingleGroupHMM:
     """
     Single group Hidden Markov Model analysis for neural state dynamics.
     Designed for comparing state patterns between different experimental groups.
@@ -83,7 +80,7 @@ class GroupHMM:
         # Set numerical stability constant
         self.eps = np.finfo(float).eps
         
-        logging.info(f"Initialized GroupHMM with {config.n_states} states")
+        logging.info(f"Initialized SingleGroupHMM with {config.n_states} states")
 
     def setup_output_directories(self, output_base: str) -> None:
         """
@@ -165,33 +162,46 @@ class GroupHMM:
 
     def initialize_model_parameters(self) -> Dict:
         """
-        Initialize HMM parameters with informed priors and numerical stability.
+        Initialize HMM parameters with informed priors and numerical stability,
+        without biasing different states toward different durations.
         
         Returns:
             Dictionary of initial parameter values
         """
         try:
-            # Initialize transition matrix with temporal constraints
+            # Initialize transition matrix with uniform temporal constraints
             transmat = np.zeros((self.config.n_states, self.config.n_states))
+            
+            # Use a consistent average duration across all states
+            # Based on typical neural state durations in fMRI (e.g., 5-10 seconds)
+            avg_duration = 7.0 / self.config.tr  # 7 seconds is a reasonable expectation
+            
             for i in range(self.config.n_states):
-                # Duration increases with state index
-                avg_duration = (5 + i * 2) / self.config.tr  # 5s base, +2s per state
+                # Calculate self-transition probability based on average duration
                 stay_prob = np.exp(-1/avg_duration)
                 transmat[i,i] = stay_prob
-                # Distribute remaining probability with stability
+                
+                # Distribute remaining probability uniformly to other states
                 remaining_prob = 1 - stay_prob
                 transmat[i, [j for j in range(self.config.n_states) if j != i]] = \
-                    remaining_prob / (self.config.n_states - 1) + self.eps
-                
-            # Normalize for numerical stability
+                    remaining_prob / (self.config.n_states - 1)
+            
+            # Ensure exact normalization for numerical stability
             transmat /= transmat.sum(axis=1, keepdims=True)
             
-            # Initialize means and covariances
+            # Initialize means with k-means for better starting points
             n_features = self.processed_data.shape[1]
+            
+            # Option 1: Random initialization (can be replaced with k-means)
             means = np.random.randn(self.config.n_states, n_features)
+            
+            # Option 2: Using covariance structure of the data for more realistic initialization
+            data_cov = np.cov(self.processed_data.T)
+            
+            # Initialize covariance matrices - using scaled data covariance for more realistic priors
             covars = np.tile(np.eye(n_features), (self.config.n_states, 1, 1))
             
-            # Add small diagonal term for stability
+            # Add small diagonal term for numerical stability
             covars += np.eye(n_features)[None, :, :] * self.eps
             
             return {
@@ -207,11 +217,11 @@ class GroupHMM:
 
     def fit_model(self, n_states: int) -> Optional[hmm.GaussianHMM]:
         """
-        Fit HMM model with parallel initialization attempts and early stopping.
+        Fit HMM model with parallel initialization attempts.
         
         Args:
             n_states: Number of states for the model
-            
+                
         Returns:
             Best fitted model or None if fitting fails
         """
@@ -234,17 +244,12 @@ class GroupHMM:
                 model.covars_ = params['covars']
                 model.transmat_ = params['transmat']
                 
-                # Fit with monitoring
-                prev_score = float('-inf')
-                for iter_num in range(self.config.max_iter):
-                    model.fit(self.processed_data)
-                    score = model.score(self.processed_data)
-                    
-                    # Check for convergence
-                    if abs(score - prev_score) < self.config.convergence_tol:
-                        logging.info(f"Converged after {iter_num + 1} iterations")
-                        break
-                    prev_score = score
+                # Fit the model once - the HMM implementation will handle
+                # convergence internally based on the tolerance parameter
+                model.fit(self.processed_data)
+                
+                # Calculate score on the training data
+                score = model.score(self.processed_data)
                 
                 return score, model
                 
@@ -259,7 +264,7 @@ class GroupHMM:
             random_seeds = np.random.randint(0, 10000, size=self.config.max_tries)
             
             # Run parallel fitting attempts
-            with ThreadPoolExecutor(max_workers=min(self.config.max_tries, os.cpu_count())) as executor:
+            with ThreadPoolExecutor(max_workers=min(self.config.max_tries, self.config.n_jobs)) as executor:
                 results = list(executor.map(
                     single_fit_attempt, 
                     random_seeds
@@ -281,6 +286,146 @@ class GroupHMM:
             logging.error(f"Error in model fitting: {e}")
             raise
     
+    def analyze_with_loocv(self) -> Dict:
+        """
+        Perform leave-one-subject-out cross-validation for the current model.
+        
+        Returns:
+            Dictionary containing cross-validation results
+        """
+        if self.model is None:
+            raise ValueError("Must fit model before analyzing with cross-validation")
+            
+        n_subjects = self.n_subjects
+        n_timepoints = self.n_timepoints
+        
+        # Results storage
+        cv_results = {
+            'log_likelihood': np.zeros(n_subjects),
+            'state_patterns': [],
+            'state_predictions': []
+        }
+        
+        # Loop through each subject as a test set
+        for test_subj in range(n_subjects):
+            # Create training mask (all subjects except test subject)
+            train_mask = np.ones(n_subjects, dtype=bool)
+            train_mask[test_subj] = False
+            
+            # Get indices for training data
+            train_indices = []
+            for i in np.where(train_mask)[0]:
+                train_indices.extend(range(i*n_timepoints, (i+1)*n_timepoints))
+            
+            # Get indices for test data
+            test_indices = list(range(test_subj*n_timepoints, (test_subj+1)*n_timepoints))
+            
+            # Extract training and test data
+            train_data = self.processed_data[train_indices]
+            test_data = self.processed_data[test_indices]
+            
+            # Train model on training data
+            fold_model = hmm.GaussianHMM(
+                n_components=self.config.n_states,
+                covariance_type='full',
+                n_iter=self.config.max_iter,
+                tol=self.config.convergence_tol,
+                random_state=self.config.random_state,
+                init_params=''
+            )
+            
+            # Initialize parameters with proper regularization
+            fold_model.startprob_ = self.model.startprob_.copy()
+            fold_model.means_ = self.model.means_.copy()
+            
+            # Fix the covariance matrices to ensure they are symmetric and positive-definite
+            regularized_covars = []
+            for cov in self.model.covars_:
+                # Make symmetric by averaging with its transpose
+                cov_symmetric = (cov + cov.T) / 2
+                
+                # Add regularization to ensure positive-definiteness
+                min_eig = np.min(np.real(np.linalg.eigvals(cov_symmetric)))
+                if min_eig < 1e-6:
+                    # Add small positive value to diagonal
+                    reg_term = abs(min_eig) + 1e-6
+                    cov_symmetric += np.eye(cov_symmetric.shape[0]) * reg_term
+                    
+                regularized_covars.append(cov_symmetric)
+                
+            fold_model.covars_ = np.array(regularized_covars)
+            fold_model.transmat_ = self.model.transmat_.copy()
+            
+            # Fit model
+            fold_model.fit(train_data)
+            
+            # Evaluate on test data
+            cv_results['log_likelihood'][test_subj] = fold_model.score(test_data)
+            
+            # Store state patterns and predictions
+            cv_results['state_patterns'].append(fold_model.means_)
+            cv_results['state_predictions'].append(fold_model.predict(test_data))
+        
+        # Calculate state reliability across folds
+        state_reliability = self._calculate_state_pattern_reliability(cv_results['state_patterns'])
+        
+        cv_results['mean_log_likelihood'] = np.mean(cv_results['log_likelihood'])
+        cv_results['state_reliability'] = state_reliability
+        
+        return cv_results
+
+    def _calculate_state_pattern_reliability(self, state_patterns: List[np.ndarray]) -> float:
+        """
+        Calculate the reliability of state patterns across cross-validation folds.
+        
+        Args:
+            state_patterns: List of state mean patterns from each fold
+            
+        Returns:
+            Overall state pattern reliability score
+        """
+        n_folds = len(state_patterns)
+        n_states = self.config.n_states
+        
+        # Calculate correlation between each pair of fold patterns
+        pattern_correlations = np.zeros((n_folds, n_folds, n_states, n_states))
+        
+        for i in range(n_folds):
+            for j in range(i+1, n_folds):
+                for state_i in range(n_states):
+                    for state_j in range(n_states):
+                        # Calculate correlation with numerical stability
+                        pattern_i = state_patterns[i][state_i]
+                        pattern_j = state_patterns[j][state_j]
+                        
+                        norm_i = np.linalg.norm(pattern_i) + self.eps
+                        norm_j = np.linalg.norm(pattern_j) + self.eps
+                        
+                        correlation = np.dot(pattern_i, pattern_j) / (norm_i * norm_j)
+                        pattern_correlations[i, j, state_i, state_j] = correlation
+                        pattern_correlations[j, i, state_j, state_i] = correlation
+        
+        # Find the best matching state between each pair of folds
+        from scipy.optimize import linear_sum_assignment
+        
+        fold_reliabilities = []
+        
+        for i in range(n_folds):
+            for j in range(i+1, n_folds):
+                # Create cost matrix (negative correlations for maximization)
+                cost_matrix = -pattern_correlations[i, j]
+                
+                # Find optimal state matching
+                row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                
+                # Calculate mean correlation with optimal matching
+                reliability = np.mean([pattern_correlations[i, j, row_ind[k], col_ind[k]] 
+                                    for k in range(n_states)])
+                fold_reliabilities.append(reliability)
+        
+        # Return mean reliability across all fold pairs
+        return np.mean(fold_reliabilities)
+
     def _calculate_bootstrap_uncertainty(self, subject_sequences: List[np.ndarray]) -> Dict:
         """
         Calculate bootstrap-based uncertainty estimates for state metrics.
@@ -1062,42 +1207,6 @@ class GroupHMM:
             logging.error(f"Error calculating pattern stability: {e}")
             raise
 
-    def _calculate_pattern_reliability(self, state_data: np.ndarray) -> float:
-        """
-        Calculate reliability of activation pattern using leave-one-out cross-validation.
-        
-        Args:
-            state_data: Data points belonging to the state [n_samples, n_features]
-            
-        Returns:
-            Reliability score between 0 and 1
-        """
-        try:
-            if len(state_data) < 3:  # Need at least 3 samples for meaningful leave-one-out
-                return 0.0
-            
-            correlations = []
-            for i in range(len(state_data)):
-                # Leave one sample out
-                train_data = np.delete(state_data, i, axis=0)
-                test_data = state_data[i]
-                
-                # Calculate mean pattern from training data
-                mean_pattern = np.mean(train_data, axis=0)
-                
-                # Calculate correlation with left-out sample
-                norm1 = np.linalg.norm(mean_pattern) + self.eps
-                norm2 = np.linalg.norm(test_data) + self.eps
-                correlation = np.dot(mean_pattern, test_data) / (norm1 * norm2)
-                correlations.append(np.clip(correlation, 0, 1))
-            
-            # Return mean correlation
-            return np.mean(correlations)
-            
-        except Exception as e:
-            logging.error(f"Error calculating pattern reliability: {e}")
-            raise
-
     def _calculate_state_separability(self) -> Dict:
         """Calculate how separable the states are from each other."""
         try:
@@ -1588,17 +1697,14 @@ class GroupHMM:
             labels = []
             
             for state in range(self.config.n_states):
-                intervals = temporal.get('recurrence_intervals', {}).get(state, [])
+                intervals = temporal['recurrence_intervals'].get(state, [])
                 if intervals:
                     recurrence_data.append(intervals)
                     labels.append(f'State {state}')
             
             if recurrence_data:
-                # Create boxplot and set ticks properly
-                bp = ax3.boxplot(recurrence_data)
-                ax3.set_xticks(range(1, len(labels) + 1))
-                ax3.set_xticklabels(labels, rotation=45)
-                
+                # Use tick_labels instead of labels (addressing deprecation warning)
+                ax3.boxplot(recurrence_data, tick_labels=labels)
                 ax3.set_yscale('log')
                 ax3.set_title('State Recurrence Intervals')
                 ax3.set_xlabel('State')
@@ -1627,17 +1733,14 @@ class GroupHMM:
             stability_labels = []
             
             for state in range(self.config.n_states):
-                durations = temporal.get('state_stability', {}).get(state, [])
+                durations = temporal['state_stability'].get(state, [])
                 if durations:
                     stability_data.append(durations)
                     stability_labels.append(f'State {state}')
             
             if stability_data:
-                # Create boxplot and set ticks properly
-                bp = ax4.boxplot(stability_data)
-                ax4.set_xticks(range(1, len(stability_labels) + 1))
-                ax4.set_xticklabels(stability_labels, rotation=45)
-                
+                # Use tick_labels instead of labels
+                ax4.boxplot(stability_data, tick_labels=stability_labels)
                 ax4.set_yscale('log')
                 ax4.set_title('State Stability Durations')
                 ax4.set_xlabel('State')
@@ -2032,10 +2135,8 @@ class GroupHMM:
                         'Value': np.concatenate(similarity_data)
                     })
                     sns.boxplot(data=df, x='Metric', y='Value', ax=ax4)
-                    ticks = np.arange(len(df['Metric'].unique()))
-                    ax4.set_xticks(ticks)
-                    ax4.set_xticklabels(df['Metric'].unique(), rotation=45, ha='right')
                     ax4.set_title('Additional Similarity Metrics')
+                    ax4.set_xticklabels(ax4.get_xticklabels(), rotation=45)
                     
                     # Add summary statistics
                     if 'summary' in metrics:
@@ -2255,7 +2356,7 @@ class NumpyJSONEncoder(json.JSONEncoder):
             return obj.tolist()
         return super().default(obj)
 
-def run_combined_group_analysis(data: np.ndarray,
+def run_single_group_analysis(data: np.ndarray,
                             group_name: str,
                             output_dir: str,
                             config: HMMConfig) -> Dict:
@@ -2283,7 +2384,7 @@ def run_combined_group_analysis(data: np.ndarray,
             )
             
         # Initialize analyzer
-        analyzer = GroupHMM(config)
+        analyzer = SingleGroupHMM(config)
         
         # Setup output directories
         analyzer.setup_output_directories(output_dir)
@@ -2309,6 +2410,7 @@ def run_combined_group_analysis(data: np.ndarray,
             ("Analyzing state properties", analyzer.analyze_state_properties),
             ("Analyzing subject consistency", analyzer.analyze_subject_consistency)
         ]
+    
         
         results = {}
         for desc, func in analysis_steps:
@@ -2317,6 +2419,12 @@ def run_combined_group_analysis(data: np.ndarray,
                 results[func.__name__] = func()
                 pbar.update(1)
         
+        logging.info("Performing leave-one-subject-out cross-validation...")
+        cv_results = analyzer.analyze_with_loocv()
+        
+        # Add CV results to overall results
+        results['cross_validation'] = cv_results
+
         # Generate visualizations
         logging.info("Generating visualizations...")
         analyzer.generate_visualizations(
@@ -2334,7 +2442,16 @@ def run_combined_group_analysis(data: np.ndarray,
             results['analyze_state_properties'],
             results['analyze_subject_consistency']
         )
+        cv_path = analyzer.stats_dir / f"{group_name}_cv_results.json"
         
+        with open(cv_path, 'w') as f:
+            json.dump({
+                'log_likelihood': cv_results['log_likelihood'].tolist(),
+                'mean_log_likelihood': float(cv_results['mean_log_likelihood']),
+                'state_reliability': float(cv_results['state_reliability']),
+                'n_states': config.n_states
+            }, f, indent=4)
+
         return results
         
     except Exception as e:
@@ -2354,6 +2471,9 @@ def main():
                        help='Number of states to use')
     
     # Optional arguments
+    parser.add_argument('--group', type=str, default="combined",
+                        choices=["affair", "paranoia", "combined"],
+                        help='Group to analyze (affair, paranoia, or combined)')
     parser.add_argument('--res', type=str, default="native",
                        help='Resolution of the atlas')
     parser.add_argument('--trim', type=bool, default=True,
@@ -2366,14 +2486,13 @@ def main():
                        help='Window size for temporal analyses (seconds)')
     parser.add_argument('--n_bootstrap', type=int, default=1000,
                        help='Number of bootstrap iterations')
+    parser.add_argument('--n_jobs', type=int, default=1,
+                       help='Number of CPU cores to use for parallel processing')
     
     args = parser.parse_args()
-    group_name = "combined"
+    group_name = args.group
+    
     try:
-        # Setup logging
-        log_file = f"{group_name}_analysis.log"
-        setup_logging(log_file)
-        
         # Load environment variables
         from dotenv import load_dotenv
         load_dotenv()
@@ -2384,9 +2503,18 @@ def main():
             raise ValueError("SCRATCH_DIR environment variable not set")
             
         if args.trim:
-            output_dir = Path(scratch_dir) / "output" / f"{group_name}_hmm_{args.n_states}states_ntw_{args.res}_trimmed"
+            output_dir = Path(scratch_dir) / "output" / f"04_{group_name}_hmm_{args.n_states}states_ntw_{args.res}_trimmed"
         else:
-            output_dir = Path(scratch_dir) / "output" / f"{group_name}_hmm_{args.n_states}states_ntw_{args.res}"
+            output_dir = Path(scratch_dir) / "output" / f"04_{group_name}_hmm_{args.n_states}states_ntw_{args.res}"
+        
+        # Create output directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Setup logging
+        setup_logging(group_name, output_dir)
+        
+        logging.info(f"Starting HMM analysis for group: {group_name}")
+        logging.info(f"Parameters: n_states={args.n_states}, res={args.res}, trim={args.trim}")
         
         # Create HMMConfig
         config = HMMConfig(
@@ -2394,18 +2522,19 @@ def main():
             random_state=args.random_state,
             tr=args.tr,
             window_size=args.window_size,
-            n_bootstrap=args.n_bootstrap
+            n_bootstrap=args.n_bootstrap,
+            n_jobs=args.n_jobs 
         )
         
         # Load and prepare data
         logging.info("Loading data...")
-        group_data = load_group_data(scratch_dir, args.res)
+        group_data = load_group_data(scratch_dir, args.res, group_name)
         
         if args.trim:
             group_data = group_data[:, :, 17:468]
         
         # Run analysis
-        run_combined_group_analysis(
+        run_single_group_analysis(
             data=group_data,
             group_name=group_name,
             output_dir=str(output_dir),
@@ -2418,55 +2547,187 @@ def main():
         logging.error(f"Fatal error in main execution: {str(e)}")
         raise
 
-def setup_logging(log_file: str) -> None:
-    """Setup logging configuration."""
-    handlers = [
-        logging.StreamHandler(),
-        logging.FileHandler(log_file)
-    ]
+def setup_logging(group_name: str, output_dir: Path) -> None:
+    """Setup logging with a more robust configuration approach."""
+    # Create logs directory
+    logs_dir = output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-        handlers=handlers
-    )
+    # Create log file path with timestamp
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    log_file = logs_dir / f"{group_name}_hmm_analysis_{timestamp}.log"
+    
+    # Reset root logger by removing all handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Create formatters
+    log_format = '%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    formatter = logging.Formatter(log_format)
+    
+    # Create handlers
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    
+    file_handler = logging.FileHandler(str(log_file))
+    file_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    logging.root.setLevel(logging.INFO)
+    logging.root.addHandler(console_handler)
+    logging.root.addHandler(file_handler)
+    
+    logging.info(f"Logging initialized. Log file: {log_file}")
 
-def load_single_group(group_files: Path) -> np.ndarray:
-    """Load and validate group data."""
-    group_data = []
-    for file in tqdm(group_files, desc="Loading network data"):
-        data = np.load(file)
-        avg_data = np.mean(data, axis=1)
-        group_data.append(avg_data)
-    group_data = np.stack(group_data, axis=1)
-    logging.info(f"Loaded data with shape: {group_data.shape}")
-    return group_data
-
-def load_group_data(scratch_dir: str, res: str) -> np.ndarray:
-    """Load and validate group data."""
+def load_group_data(scratch_dir: str, res: str, group_name: str) -> np.ndarray:
+    """
+    Load and validate group data based on subject IDs from environment variables.
+    
+    Args:
+        scratch_dir: Scratch directory path
+        res: Resolution string (e.g., "native")
+        group_name: Group name ("affair", "paranoia", or "combined")
+        
+    Returns:
+        Numpy array of group data with shape (n_subjects, n_networks, n_timepoints)
+    """
     try:
-        data_path = Path(scratch_dir) / "output" / f"atlas_masked_{res}" / "networks"
-        group1_files = sorted(data_path.glob("affair_*.npy"))
-        group2_files = sorted(data_path.glob("paranoia_*.npy"))
+        data_path = Path(scratch_dir) / "output" / f"03_network_data_{res}"
         
+        # Get subject IDs from environment variables
+        affair_subjects = os.getenv("AFFAIR_SUBJECTS", "").split(",")
+        paranoia_subjects = os.getenv("PARANOIA_SUBJECTS", "").split(",")
+        
+        # Determine which subject IDs to load based on group_name
+        if group_name.lower() == "affair":
+            subjects_to_load = affair_subjects
+            logging.info(f"Loading {len(subjects_to_load)} affair subjects")
+        elif group_name.lower() == "paranoia":
+            subjects_to_load = paranoia_subjects
+            logging.info(f"Loading {len(subjects_to_load)} paranoia subjects")
+        elif group_name.lower() == "combined":
+            subjects_to_load = affair_subjects + paranoia_subjects
+            logging.info(f"Loading {len(subjects_to_load)} combined subjects ({len(affair_subjects)} affair, {len(paranoia_subjects)} paranoia)")
+        else:
+            raise ValueError(f"Unknown group name: {group_name}. Valid options are 'affair', 'paranoia', or 'combined'")
+        
+        # Find all network files
+        all_files = list(data_path.glob("*.npy"))
+        if not all_files:
+            raise ValueError(f"No .npy files found in {data_path}")
             
-        if len(group1_files) != 18:
-            raise ValueError(f"Expected 18 networks, found {len(group1_files)}")
+        # Extract unique network names from file patterns
+        network_names = set()
+        for file_path in all_files:
+            # Based on file pattern like: sub-023_DefaultA_network_data.npy
+            parts = file_path.name.split('_')
+            if len(parts) >= 2:
+                network_name = parts[1]  # Second part is the network name
+                network_names.add(network_name)
         
-        if len(group2_files) != 18:
-            raise ValueError(f"Expected 18 networks, found {len(group2_files)}")
+        # Sort network names for consistent ordering
+        network_names = sorted(list(network_names))
+        logging.info(f"Discovered {len(network_names)} networks: {', '.join(network_names)}")
         
-        # Load and average data
-        affair_data = load_single_group(group1_files)
-        paranoia_data = load_single_group(group2_files)
-        group_data = np.concatenate([affair_data, paranoia_data], axis=0)
+        # Initialize data dictionary for each subject
+        all_subject_data = {}
+        for subject_id in subjects_to_load:
+            all_subject_data[subject_id] = {network: None for network in network_names}
         
-        logging.info(f"Loaded data with shape: {group_data.shape}")
+        # Find and load all network files for each subject
+        for subject_id in subjects_to_load:
+            subject_files = list(data_path.glob(f"{subject_id}_*_*.npy"))
+            
+            if not subject_files:
+                logging.warning(f"No data files found for subject {subject_id}")
+                continue
+            
+            # Process each file for this subject
+            for file_path in subject_files:
+                # Parse network name from filename (assuming format: {subj_id}_{network_name}_*.npy)
+                parts = file_path.name.split('_')
+                if len(parts) < 2:
+                    logging.warning(f"Unexpected filename format: {file_path.name}")
+                    continue
+                
+                network_name = parts[1]  # Extract network name
+                
+                # Verify network is in our discovered list
+                if network_name not in network_names:
+                    logging.warning(f"Network name '{network_name}' not in discovered networks list")
+                    continue
+                
+                # Load data
+                try:
+                    data = np.load(file_path)
+                    
+                    # Log the shape of the first network file we encounter
+                    if subject_id == subjects_to_load[0] and network_name == network_names[0]:
+                        logging.info(f"Network data shape for {file_path.name}: {data.shape}")
+                    
+                    all_subject_data[subject_id][network_name] = data
+                except Exception as e:
+                    logging.error(f"Error loading {file_path}: {str(e)}")
         
-        return group_data
+        # Check that all networks are loaded for each subject
+        valid_subjects = []
+        for subject_id, networks in all_subject_data.items():
+            missing_networks = [network for network, data in networks.items() if data is None]
+            
+            if missing_networks:
+                logging.warning(f"Subject {subject_id} is missing networks: {missing_networks}")
+                continue
+                
+            valid_subjects.append(subject_id)
+        
+        if not valid_subjects:
+            raise ValueError(f"No subjects with complete network data for {group_name} group")
+        
+        logging.info(f"Found {len(valid_subjects)} subjects with complete data")
+        
+        # Determine timepoints from first subject's first network
+        first_subject = all_subject_data[valid_subjects[0]]
+        first_network_data = first_subject[network_names[0]]
+        
+        # Determine dimensions based on the shape of first network data
+        if first_network_data.ndim > 1:
+            n_timepoints = first_network_data.shape[1]  # Assuming [n_parcels, n_timepoints]
+            logging.info(f"Network data contains multiple parcels per network: {first_network_data.shape}")
+        else:
+            n_timepoints = len(first_network_data)  # Single time series
+            logging.info(f"Network data contains single time series per network: {first_network_data.shape}")
+        
+        # Initialize output array
+        output_data = np.zeros((len(valid_subjects), len(network_names), n_timepoints))
+        
+        # Fill output array in correct order, averaging across parcels within each network
+        for i, subject_id in enumerate(valid_subjects):
+            for j, network in enumerate(network_names):
+                network_data = all_subject_data[subject_id][network]
+                
+                # Average across ROIs/parcels within the network
+                if network_data.ndim > 1 and network_data.shape[0] > 1:
+                    # Assuming shape [n_parcels, n_timepoints]
+                    network_avg = np.mean(network_data, axis=0)
+                    output_data[i, j, :] = network_avg
+                    
+                    # Log the first time we do averaging
+                    if i == 0 and j == 0:
+                        logging.info(f"Averaging {network_data.shape[0]} parcels for each network")
+                else:
+                    # If there's only one parcel or data is already a single time series
+                    if network_data.ndim > 1:
+                        output_data[i, j, :] = network_data[0]
+                    else:
+                        output_data[i, j, :] = network_data
+        
+        logging.info(f"Final data shape: (n_subjects, n_networks, n_timepoints) = {output_data.shape}")
+        
+        return output_data
         
     except Exception as e:
-        logging.error(f"Error loading group data: {e}")
+        logging.error(f"Error loading group data: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     main()

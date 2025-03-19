@@ -146,7 +146,7 @@ if __name__ == "__main__":
     scratch_dir = os.getenv("SCRATCH_DIR")
     data_dir = os.path.join(scratch_dir, "data")
     output_dir = os.path.join(scratch_dir, "output")
-    save_dir = os.path.join(output_dir, f"postproc_{args.res}")
+    save_dir = os.path.join(output_dir, f"01_postproc_{args.res}")
     os.makedirs(save_dir, exist_ok=True)
 
     # Construct file path

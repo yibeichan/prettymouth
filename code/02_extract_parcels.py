@@ -6,16 +6,31 @@ from typing import List
 import multiprocessing as mp
 from functools import partial
 
-def process_subject(sub_id: str, atlas_data: np.ndarray, data_dir: str, output_dir: str) -> None:
+def process_subject(sub_id: str, atlas_data: np.ndarray, atlas_affine: np.ndarray, data_dir: str, output_dir: str) -> None:
     """Process a single subject's data"""
-    input_path = os.path.join(data_dir, f"{sub_id}_cleaned_smoothed_masked_bold.nii.gz")
+    input_path = os.path.join(data_dir, f"{sub_id}_preprocessed_bold.nii.gz")
     # Create subject-specific output directory
     sub_output_dir = os.path.join(output_dir, sub_id)
     os.makedirs(sub_output_dir, exist_ok=True)
     
     try:
         # Load subject data
-        data = nib.load(input_path).get_fdata()
+        img = nib.load(input_path)
+        data = img.get_fdata()
+        
+        # Check spatial dimensions
+        if data.shape[:3] != atlas_data.shape:
+            raise ValueError(f"Shape mismatch: Atlas shape {atlas_data.shape}, Subject data shape {data.shape[:3]}")
+        
+        # Check spatial alignment (affine transformation matrices)
+        if not np.allclose(img.affine, atlas_affine, atol=1e-3):
+            error_message = (
+                f"ERROR: Affine matrices don't match for {sub_id}\n"
+                f"Atlas affine:\n{atlas_affine}\n"
+                f"Subject affine:\n{img.affine}\n"
+                "Data and atlas are not properly aligned! Processing halted."
+            )
+            raise ValueError(error_message)
         
         # Get unique parcel IDs (excluding 0 which is typically background)
         parcel_ids = np.unique(atlas_data)
@@ -40,16 +55,18 @@ def main(subject_ids: List[str], atlas_path: str, data_dir: str, output_dir: str
         # Load atlas once
         atlas_img = nib.load(atlas_path)
         atlas_data = atlas_img.get_fdata()
+        atlas_affine = atlas_img.affine
         print(f"Atlas data shape: {atlas_data.shape}")
         
         # Set up parallel processing
-        num_cores = 4 
+        num_cores = min(mp.cpu_count()-1, 8)  # More adaptive core usage
         print(f"Using {num_cores} cores for parallel processing")
         
         # Create partial function with fixed arguments
         process_subject_partial = partial(
             process_subject,
             atlas_data=atlas_data,
+            atlas_affine=atlas_affine,  # Pass affine matrix
             data_dir=data_dir,
             output_dir=output_dir
         )
@@ -69,12 +86,12 @@ if __name__ == "__main__":
     paranoia_ids = os.getenv("PARANOIA_SUBJECTS").split(",")
     parcellation_dir = os.path.join(scratch_dir, "data", "combined_parcellations")
 
-    res = "2mm"
+    res = "native"
     atlas_name = f"combined_Schaefer2018_1000Parcels_Kong2022_17Networks_Tian_Subcortex_S4_3T_{res}.nii.gz"
     atlas_path = os.path.join(parcellation_dir, atlas_name)
 
-    data_dir = os.path.join(scratch_dir, "output", f"postproc_{res}")
-    output_dir = os.path.join(scratch_dir, "output", f"atlas_masked_{res}")
+    data_dir = os.path.join(scratch_dir, "output", f"01_postproc_{res}")
+    output_dir = os.path.join(scratch_dir, "output", f"02_extract_parcels_{res}")
     os.makedirs(output_dir, exist_ok=True)
     
     # Combine subject lists
