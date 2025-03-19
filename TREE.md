@@ -8,21 +8,10 @@
 │   ├── 00_combine_atlas.py
 │   ├── 01_postproc.py
 │   ├── 01_postproc.sh
-│   ├── 02_atlas_masked_data.py
-│   ├── 02_get_networks.py
-│   ├── 03_extract_parcels.py
-│   ├── 03_get_groups.py
-│   ├── 03_get_masked_group.py
-│   ├── 04_get_group_network.py
-│   ├── 04_get_group_roi.py
-│   ├── 05_group_hmm_ntw_find_n_states.py
-│   ├── 05_group_hmm_ntw_find_n_states.sh
-│   ├── 06_combined_group_hmm_ntw.py
-│   ├── 06_combined_group_hmm_ntw.sh
-│   ├── 06_single_group_hmm_ntw.py
-│   ├── 06_single_group_hmm_ntw.sh
-│   ├── 06_single_group_hmm_roi.py
-│   ├── 06_single_group_hmm_roi.sh
+│   ├── 02_extract_parcels.py
+│   ├── 03_get_networks.py
+│   ├── 04_single_group_hmm_ntw.py
+│   ├── 04_single_group_hmm_ntw.sh
 │   ├── 07_group_state_patterns.py
 │   ├── 08_group_coact_pattern_comp.py
 │   ├── 09_group_HMM_comp.py
@@ -80,5 +69,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 74 files
+6 directories, 63 files
 ```
