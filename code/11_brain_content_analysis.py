@@ -33,10 +33,10 @@ class HierarchicalStateAnalysis:
             
             # Load state sequences
             self.affair_sequences = np.load(
-                self.output_dir / 'affair_hmm_3states_ntw_native_trimmed/statistics/affair_state_sequences.npy'
+                self.output_dir / '04_affair_hmm_3states_ntw_native_trimmed/statistics/affair_state_sequences.npy'
             )
             self.paranoia_sequences = np.load(
-                self.output_dir / 'paranoia_hmm_3states_ntw_native_trimmed/statistics/paranoia_state_sequences.npy'
+                self.output_dir / '04_paranoia_hmm_3states_ntw_native_trimmed/statistics/paranoia_state_sequences.npy'
             )
 
             # Initial data validation

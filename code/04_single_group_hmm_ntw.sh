@@ -3,12 +3,12 @@
 #SBATCH --partition=mit_normal
 #SBATCH --output=../logs/group_hmm-%j.out
 #SBATCH --error=../logs/group_hmm-%j.err
-#SBATCH --array=0-56
+#SBATCH --array=0
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=4G
-#SBATCH --time=00:25:00
+#SBATCH --mem=40G
+#SBATCH --time=02:00:00
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=yibei@mit.edu
 
@@ -17,8 +17,11 @@ source ~/.bashrc  # or source /etc/profile.d/conda.sh
 micromamba activate prettymouth
 
 # Arrays
-group_names=("affair" "paranoia" "combined")
-n_states=(2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
+# group_names=("affair" "paranoia" "combined")
+# n_states=(2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
+
+group_names=("combined")
+n_states=(14)
 
 # Generate combinations
 combinations=()
