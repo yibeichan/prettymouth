@@ -12,9 +12,9 @@
 │   ├── 03_get_networks.py
 │   ├── 04_single_group_hmm_ntw.py
 │   ├── 04_single_group_hmm_ntw.sh
-│   ├── 07_group_state_patterns.py
-│   ├── 08_group_coact_pattern_comp.py
-│   ├── 09_group_HMM_comp.py
+│   ├── 05_model_comp.py
+│   ├── 06_state_pattern_cluster.py
+│   ├── 07_group_cluster_comp.py
 │   ├── 10_character_state_group_comp.py
 │   ├── 10_stimuli_annot.py
 │   ├── 10_story_content_analysis.py
@@ -39,10 +39,7 @@
 │   ├── figures.ipynb
 │   └── utils
 │       ├── __init__.py
-│       ├── coflt.py
-│       ├── encoding.py
-│       ├── event_seg.py
-│       └── preproc.py
+│       └── pattern_cluster.py
 ├── environment.yml
 ├── generate_tree.sh
 ├── log.md
@@ -69,5 +66,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 63 files
+6 directories, 60 files
 ```
