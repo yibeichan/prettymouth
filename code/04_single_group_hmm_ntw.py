@@ -2357,6 +2357,7 @@ class NumpyJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 def run_single_group_analysis(data: np.ndarray,
+                            selected_indices: Dict,
                             group_name: str,
                             output_dir: str,
                             config: HMMConfig) -> Dict:
@@ -2388,6 +2389,10 @@ def run_single_group_analysis(data: np.ndarray,
         
         # Setup output directories
         analyzer.setup_output_directories(output_dir)
+        if group_name.lower() == "constructed":
+            # save selected indices
+            with open(analyzer.stats_dir / f"{group_name}_selected_indices.json", 'w') as f:
+                json.dump(selected_indices, f, indent=4)
         
         # Process data
         logging.info("Preprocessing data...")
@@ -2472,8 +2477,8 @@ def main():
     
     # Optional arguments
     parser.add_argument('--group', type=str, default="combined",
-                        choices=["affair", "paranoia", "combined"],
-                        help='Group to analyze (affair, paranoia, or combined)')
+                        choices=["affair", "paranoia", "combined", "constructed"],
+                        help='Group to analyze (affair, paranoia, combined, or constructed)')
     parser.add_argument('--res', type=str, default="native",
                        help='Resolution of the atlas')
     parser.add_argument('--trim', type=bool, default=True,
@@ -2528,7 +2533,7 @@ def main():
         
         # Load and prepare data
         logging.info("Loading data...")
-        group_data = load_group_data(scratch_dir, args.res, group_name)
+        group_data, selected_indices = load_group_data(scratch_dir, args.res, group_name)
         
         if args.trim:
             group_data = group_data[:, :, 17:468]
@@ -2536,6 +2541,7 @@ def main():
         # Run analysis
         run_single_group_analysis(
             data=group_data,
+            selected_indices=selected_indices,
             group_name=group_name,
             output_dir=str(output_dir),
             config=config
@@ -2608,8 +2614,32 @@ def load_group_data(scratch_dir: str, res: str, group_name: str) -> np.ndarray:
         elif group_name.lower() == "combined":
             subjects_to_load = affair_subjects + paranoia_subjects
             logging.info(f"Loading {len(subjects_to_load)} combined subjects ({len(affair_subjects)} affair, {len(paranoia_subjects)} paranoia)")
+        elif group_name.lower() == "constructed":
+            # Set a fixed random seed for reproducibility
+            np.random.seed(42)
+            
+            # Randomly select 9 subjects from affair
+            affair_indices = np.random.choice(len(affair_subjects), size=9, replace=False)
+            selected_affair = [affair_subjects[i] for i in affair_indices]
+            
+            # Randomly select 10 subjects from paranoia
+            paranoia_indices = np.random.choice(len(paranoia_subjects), size=10, replace=False)
+            selected_paranoia = [paranoia_subjects[i] for i in paranoia_indices]
+            
+            # Create dictionary to return subject indices
+            selected_indices = {
+                'affair': affair_indices.tolist(),
+                'paranoia': paranoia_indices.tolist(),
+                'selected_subjects': {
+                    'affair': selected_affair,
+                    'paranoia': selected_paranoia
+                }
+            }
+            
+            subjects_to_load = selected_affair + selected_paranoia
+            logging.info(f"Constructed balanced group with {len(subjects_to_load)} subjects (9 affair, 10 paranoia)")
         else:
-            raise ValueError(f"Unknown group name: {group_name}. Valid options are 'affair', 'paranoia', or 'combined'")
+            raise ValueError(f"Unknown group name: {group_name}. Valid options are 'affair', 'paranoia', 'combined', or 'constructed'")
         
         # Find all network files
         all_files = list(data_path.glob("*.npy"))
@@ -2723,7 +2753,7 @@ def load_group_data(scratch_dir: str, res: str, group_name: str) -> np.ndarray:
         
         logging.info(f"Final data shape: (n_subjects, n_networks, n_timepoints) = {output_data.shape}")
         
-        return output_data
+        return output_data, selected_indices
         
     except Exception as e:
         logging.error(f"Error loading group data: {str(e)}")

@@ -998,7 +998,7 @@ if __name__ == "__main__":
     scratch_dir = os.getenv("SCRATCH_DIR")
     base_dir = os.path.join(scratch_dir, "output")
     # Compare multiple groups
-    groups = ["affair", "paranoia", "combined"]
+    groups = ["affair", "paranoia", "combined", "constructed"]
     group_results = {}
     
     for group in groups:
