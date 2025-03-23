@@ -18,6 +18,21 @@ from matplotlib.colors import ListedColormap
 from matplotlib import cm
 from matplotlib import gridspec
 
+plt.style.use('default')
+plt.rcParams.update({
+    'figure.figsize': [8.0, 6.0],
+    'figure.dpi': 300,
+    'font.size': 10,
+    'svg.fonttype': 'none',
+    'figure.titlesize': 9,
+    'axes.titlesize': 9,
+    'axes.labelsize': 8,
+    'ytick.labelsize': 6,
+    'xtick.labelsize': 6,
+    'axes.facecolor': 'white',
+    'figure.facecolor': 'white'
+})
+
 COLORS = {
     'affair': '#e41a1c',      # Red
     'affair_light': '#ff6666', # Light red
@@ -128,9 +143,9 @@ class StatePatternAnalyzer:
         state_match = re.search(r'(\d+)_?states', path_str)
         if state_match:
             n_states = state_match.group(1)
-            return f"{group_match} {n_states}states"
+            return f"{n_states}states"
         else:
-            return f"{group_match} unknown"
+            return f"unknown"
     
     def _sort_states_by_occupancy(self, metrics, model_name):
         """
@@ -401,9 +416,12 @@ class StatePatternAnalyzer:
             })
         
         # Sort clusters by size and reassign cluster IDs
-        # Get clusters sorted by size (largest first)
+        # Changed: Sort by total fractional occupancy instead of just size
         sorted_clusters = sorted(clusters.items(), 
-                               key=lambda x: len(x[1]), 
+                               key=lambda x: sum(
+                                   self.patterns[item['group']]['metadata'][item['pattern_idx']].get('occupancy', 0) 
+                                   for item in x[1] if item['group'] in self.patterns
+                               ), 
                                reverse=True)
         
         # Create new clusters dictionary with reassigned IDs
@@ -416,10 +434,10 @@ class StatePatternAnalyzer:
         
         # Compute cluster information
         self._compute_cluster_info(clusters)
-        self.logger.info(f"Created {len(self.cluster_info)} pattern clusters")
+        self.logger.info(f"Created {len(self.cluster_info)} pattern clusters, sorted by total fractional occupancy")
     
     def _compute_cluster_info(self, clusters):
-        """Compute detailed information about each cluster."""
+        """Compute detailed information about each cluster with fractional occupancy."""
         self.cluster_info = {}
         
         for cluster_id, members in clusters.items():
@@ -433,6 +451,8 @@ class StatePatternAnalyzer:
             
             # Collect member information with source details
             member_info = []
+            total_fractional_occupancy = 0.0  # Track total fractional occupancy
+            
             for member in members:
                 group = member['group']
                 pattern_idx = member['pattern_idx']
@@ -448,12 +468,18 @@ class StatePatternAnalyzer:
                 original_state_idx = metadata.get('original_state_idx', 'unknown')
                 sorted_state_idx = metadata.get('sorted_state_idx', 'unknown')
                 
+                # Extract fractional occupancy - this is key for our new sorting
+                fractional_occupancy = metadata.get('occupancy', 0.0)
+                if fractional_occupancy is not None:
+                    total_fractional_occupancy += float(fractional_occupancy)
+                
                 member_info.append({
                     'group': group,
                     'pattern_idx': pattern_idx,
                     'model': model_key,
                     'original_state_idx': original_state_idx, 
-                    'sorted_state_idx': sorted_state_idx
+                    'sorted_state_idx': sorted_state_idx,
+                    'fractional_occupancy': fractional_occupancy  # Include in member info
                 })
             
             # Group membership counts
@@ -465,6 +491,7 @@ class StatePatternAnalyzer:
             # Store cluster information
             self.cluster_info[cluster_id] = {
                 'size': len(members),
+                'total_fractional_occupancy': total_fractional_occupancy,  # New field
                 'consensus_pattern': consensus.astype(int),
                 'groups': groups_in_cluster,
                 'members': member_info,
@@ -477,10 +504,10 @@ class StatePatternAnalyzer:
             self.logger.warning("No clustering results to visualize")
             return
         
-        # Sort clusters by size
+        # Sort clusters by total fractional occupancy instead of size
         sorted_clusters = sorted(
             self.cluster_info.items(), 
-            key=lambda x: x[1]['size'], 
+            key=lambda x: x[1]['total_fractional_occupancy'], 
             reverse=True
         )
         
@@ -496,54 +523,47 @@ class StatePatternAnalyzer:
                         'SVA-B', 'SM-A', 'SM-B', 'Vis-A', 'Vis-B',
                         'Vis-C']
         
-        # 1. Plot consensus patterns for top clusters with better visualization
-        self._create_consensus_pattern_plot(sorted_clusters, network_labels)
-        
-        # 2. Plot pattern distributions across clusters as a separate visualization
-        self._create_cluster_distribution_plot(sorted_clusters, group_colors)
+        self._create_consensus_pattern_plot(sorted_clusters, network_labels)        
 
     def _create_consensus_pattern_plot(self, sorted_clusters, network_labels):
-        """Create a plot of consensus patterns for the top clusters with size-based coloring."""
+        """Create a plot of consensus patterns for the top clusters with occupancy-based coloring."""
         num_clusters_to_show = min(30, len(sorted_clusters))
         
         if num_clusters_to_show == 0:
             self.logger.warning("No clusters to display in consensus pattern plot")
             return
         
-        # Extract cluster sizes and consensus patterns
+        # Extract cluster info and consensus patterns
         cluster_sizes = np.array([data['size'] for _, data in sorted_clusters[:num_clusters_to_show]])
+        total_occupancies = np.array([data['total_fractional_occupancy'] for _, data in sorted_clusters[:num_clusters_to_show]])
         consensus_patterns = np.array([data['consensus_pattern'] for _, data in sorted_clusters[:num_clusters_to_show]])
         
         # Create figure with gridspec
-        fig = plt.figure(figsize=(15, 12))
-        gs = gridspec.GridSpec(2, 1, height_ratios=[1, 4], hspace=0)  # Set hspace=0 to remove gap
+        fig = plt.figure(figsize=(6, 4))
+        gs = gridspec.GridSpec(2, 1, height_ratios=[1, 4], hspace=0)
         ax_hist = plt.subplot(gs[0])
         ax_heat = plt.subplot(gs[1])
 
-        # Create cluster labels and calculate group counts for coloring
+        # Create cluster labels with occupancy information
         cluster_labels = []
-        group_counts_array = []  # Store group counts for coloring
         
         for i, (cluster_id, data) in enumerate(sorted_clusters[:num_clusters_to_show]):
-            # Format label with size and group counts
-            label = f"C{cluster_id} (n={data['size']}): "  # Add 1 to cluster_id
-            group_counts = []
-            total_group_count = sum(data['group_counts'].values())  # Calculate total count
+            # Format label with size, occupancy and group counts
+            occ_formatted = f"{data['total_fractional_occupancy']:.2f}" if data['total_fractional_occupancy'] else "0.00"
+            label = f"C{cluster_id} (n={data['size']}, occ={occ_formatted}): " 
             
+            group_counts = []
             for group, count in data['group_counts'].items():
                 if count > 0:
                     group_counts.append(f"{group}({count})")
             label += " ".join(group_counts)
             cluster_labels.append(label)
-            
-            # Store normalized group counts for coloring
-            group_counts_array.append(total_group_count)
         
-        # Convert group counts to a column vector for broadcasting
-        group_counts_array = np.array(group_counts_array).reshape(-1, 1)
+        # Use total_occupancies for weighting the visualization
+        total_occupancies_column = total_occupancies.reshape(-1, 1)
         
-        # Multiply consensus patterns by group counts for weighted visualization
-        weighted_patterns = consensus_patterns[:num_clusters_to_show] * group_counts_array
+        # Multiply consensus patterns by occupancy for weighted visualization
+        weighted_patterns = consensus_patterns[:num_clusters_to_show] * total_occupancies_column
 
         # Create heatmap with weighted values
         im = ax_heat.imshow(weighted_patterns, 
@@ -557,11 +577,11 @@ class StatePatternAnalyzer:
             for j in range(cols):
                 if weighted_patterns[i, j] > 0:
                     rect = plt.Rectangle((j - 0.5, i - 0.5), 1, 1, 
-                                      fill=False,  # Don't fill the rectangle
-                                      hatch='///',  # Add hatching
-                                      color='blueviolet',  # No edge color
+                                      fill=False,
+                                      hatch='///',
+                                      color='blueviolet',
                                       alpha=0.5, 
-                                      zorder=2)  # Place above heatmap
+                                      zorder=2)
                     ax_heat.add_patch(rect)
         
         # Set y-axis labels (clusters)
@@ -573,105 +593,37 @@ class StatePatternAnalyzer:
         ax_heat.set_xticks(feature_indices)
         ax_heat.set_xticklabels([network_labels[i] for i in range(len(feature_indices))], rotation=90)
         
-        # Add colorbar
-        # cbar = fig.colorbar(im, ax=[ax_hist, ax_heat], shrink=0.6, pad=0.01)
-        # cbar.set_label('Pattern Strength × Group Count')
-        
         # Count how many clusters show activity for each network
-        column_counts = np.sum(consensus_patterns != 0, axis=0)  # Count non-zero entries in each column
+        column_counts = np.sum(consensus_patterns != 0, axis=0)
         bars = ax_hist.bar(feature_indices, column_counts, align='center', alpha=0.7, color='slateblue')
         
         # Add count labels on top of bars
         for bar in bars:
             height = bar.get_height()
             ax_hist.text(bar.get_x() + bar.get_width()/2., height,
-                        f'{int(height)}',  color='darkblue', weight='bold',
+                        f'{int(height)}', color='darkblue', fontsize=6,
                         ha='center', va='bottom', rotation=0)
         
-        # remove top right bottom spines
+        # Remove spines
         ax_hist.spines['top'].set_visible(False)
         ax_hist.spines['right'].set_visible(False)
         ax_hist.spines['left'].set_visible(False)
         ax_hist.spines['bottom'].set_visible(False)
-        ax_hist.set_xticks([])  # Remove x-ticks for histogram
-        ax_hist.set_yticks([])  # Remove y-ticks for histogram
+        ax_hist.set_xticks([])
+        ax_hist.set_yticks([])
         
         # Share x-axis between histogram and heatmap
         ax_hist.set_xlim(ax_heat.get_xlim())
         
-        # Adjust layout (modify the rect parameters if needed)
-        fig.suptitle('Consensus Patterns for Top Clusters\n(Color Intensity ∝ Group Count)', 
-                 fontsize=16, y=0.98)
-        plt.tight_layout(rect=[0, 0.02, 1, 0.97])  # Adjusted bottom margin
+        # Adjust layout
+        fig.suptitle('Consensus Patterns for Top Clusters\n(Color Intensity ∝ Fractional Occupancy)')
+        plt.tight_layout(rect=[0, 0.02, 1, 0.97])
         
         # Save figure
         plt.savefig(self.output_dir / 'consensus_patterns.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'consensus_patterns.svg', dpi=300, bbox_inches='tight')
         plt.close()
 
-    def _create_cluster_distribution_plot(self, sorted_clusters, group_colors):
-        """Create a distribution plot showing patterns across clusters by group."""
-        # Collect data for plot
-        model_cluster_data = []
-        for cluster_id, data in sorted_clusters[:30]:  # Show top 20 clusters
-            for group, count in data['group_counts'].items():
-                if count > 0:
-                    model_cluster_data.append({
-                        'Cluster': f"C{cluster_id}",
-                        'Group': group, 
-                        'Count': count
-                    })
-        
-        if not model_cluster_data:
-            self.logger.warning("No data available for cluster distribution plot")
-            return
-        
-        df = pd.DataFrame(model_cluster_data)
-        
-        # Create figure with appropriate size
-        plt.figure(figsize=(14, 10))
-        
-        # Create pivot table with improved readability
-        try:
-            cluster_counts = df.pivot(index='Cluster', columns='Group', values='Count').fillna(0)
-            
-            # Use a better colormap for the heatmap
-            cmap = sns.color_palette("Blues", as_cmap=True)
-            
-            # Create the heatmap
-            ax = sns.heatmap(cluster_counts, annot=True, fmt='.0f', cmap=cmap, 
-                        linewidths=0.5, cbar=True)
-            
-            # Add total counts
-            for i, row_label in enumerate(ax.get_yticklabels()):
-                cluster_id = row_label.get_text()
-                if cluster_id in cluster_counts.index:
-                    total = cluster_counts.loc[cluster_id].sum()
-                    ax.text(len(cluster_counts.columns) + 0.2, i, f"Total: {int(total)}", 
-                        va='center', fontweight='bold')
-            
-            plt.title('Pattern Distribution Across Clusters by Group', fontsize=16)
-            
-        except Exception as e:
-            self.logger.warning(f"Error creating heatmap: {e}")
-            # Alternative: use a grouped bar chart with group colors
-            palette = {group: group_colors.get(group, '#333333') for group in df['Group'].unique()}
-            
-            ax = sns.barplot(x='Cluster', y='Count', hue='Group', data=df, 
-                        palette=palette)
-            
-            plt.title('Pattern Distribution Across Clusters by Group', fontsize=16)
-            plt.xlabel('Cluster ID', fontsize=14)
-            plt.ylabel('Pattern Count', fontsize=14)
-            plt.xticks(rotation=45)
-            
-            # Add value labels on top of the bars
-            for container in ax.containers:
-                ax.bar_label(container, fmt='%.0f')
-        
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'cluster_distribution.png', dpi=300, bbox_inches='tight')
-        plt.close()
-    
     def _create_model_summary(self):
         """Create clear and informative model-to-cluster mappings."""
         # Collect data for all patterns by group
@@ -745,7 +697,7 @@ class StatePatternAnalyzer:
                 pivot_df = pivot_df.loc[natsorted(pivot_df.index)]
                 
                 # Create heatmap
-                plt.figure(figsize=(10, max(5, len(pivot_df)*0.5)))
+                plt.figure(figsize=(5, max(1, len(pivot_df)*0.2)))
                 
                 # Use a colormap with good distinguishability for discrete values
                 cmap = plt.get_cmap('tab20', len(self.cluster_info)+1)
@@ -756,17 +708,20 @@ class StatePatternAnalyzer:
                                  cmap="rainbow", 
                                  cbar=False,
                                  linewidths=0.5, 
-                                 linecolor='white')
+                                 linecolor='white',
+                                 annot_kws={'size': 6})
                 
                 # Set title and labels
-                plt.title(f'{group}: Model State to Cluster Mapping (Sorted States)', fontsize=14)
+                # plt.title(f'{group}: Model State to Cluster Mapping (Sorted States)')
                 
                 # Set x-axis ticks for all states
                 plt.xticks(np.arange(20) + 0.5, range(1, 21))
-                plt.xlabel('Sorted State Index', fontsize=12)
+                plt.xlabel('')
+                plt.ylabel('')
                 
                 plt.tight_layout()
                 plt.savefig(self.output_dir / f'{group}_model_clusters.png', dpi=300)
+                plt.savefig(self.output_dir / f'{group}_model_clusters.svg', dpi=300)
                 plt.close()
                 
             except Exception as e:
@@ -779,7 +734,7 @@ class StatePatternAnalyzer:
 
 
     def _create_cluster_overlap_diagram(self):
-        """Create diagram showing how clusters overlap between groups."""
+        """Create diagram showing how clusters overlap between groups using a stacked bar plot."""
         # Extract data
         group_overlaps = {}
         
@@ -792,7 +747,7 @@ class StatePatternAnalyzer:
             return
         
         # Create overlap visualization
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(5, 2))
         
         # Convert to DataFrame for easier plotting
         overlap_data = []
@@ -807,18 +762,38 @@ class StatePatternAnalyzer:
         
         df = pd.DataFrame(overlap_data)
         
-        palette = {group: COLORS[group] for group in df['Group'].unique()}
-        # Create grouped bar chart
-        sns.barplot(x='Cluster', y='Count', hue='Group', data=df, palette=palette)
+        # Pivot the DataFrame to get it in the right format for stacking
+        df_pivot = df.pivot(index='Cluster', columns='Group', values='Count').fillna(0)
+        df_pivot = df_pivot.loc[natsorted(df_pivot.index)]
+
+        # Create stacked bar chart
+        ax = df_pivot.plot(
+            kind='bar',
+            stacked=True,
+            color=[COLORS[group] for group in df_pivot.columns],
+            figsize=(5, 2),
+            width=1
+        )
         
-        plt.title('Shared Clusters Across Groups', fontsize=14)
-        plt.xlabel('Cluster ID', fontsize=12)
-        plt.ylabel('Pattern Count', fontsize=12)
-        plt.legend(title='Group')
+        # # Add total count on top of each bar
+        # totals = df_pivot.sum(axis=1)
+        # for i, total in enumerate(totals):
+        #     ax.text(i, total, f'{int(total)}', 
+        #             ha='center', va='bottom')
+        
+        # plt.title('Pattern Distribution Across Clusters')
+        # plt.xlabel('Cluster ID')
+        # plt.ylabel('Pattern Count')
+        # plt.legend(title='Group', bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.xticks(rotation=90)
-        
+        plt.xlabel('')
+        plt.ylabel('')
+        # remove legend
+        ax.legend().remove()
+        # Adjust layout to prevent label cutoff
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'group_overlap.png', dpi=300)
+        plt.savefig(self.output_dir / 'group_overlap.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'group_overlap.svg', dpi=300, bbox_inches='tight')
         plt.close()
 
     def save_results(self):
