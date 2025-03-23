@@ -291,7 +291,7 @@ if __name__ == '__main__':
     data_dir = os.path.join(scratch_dir, "data")
     behav_dir = os.path.join(data_dir, "behav")
     stimuli_dir = os.path.join(data_dir, "stimuli")
-    output_dir = os.path.join(scratch_dir, "output", "behav_results")
+    output_dir = os.path.join(scratch_dir, "output", "08_behav_results")
     os.makedirs(output_dir, exist_ok=True)
 
     stimuli_file1 = os.path.join(stimuli_dir, "word_by_onset.csv")
