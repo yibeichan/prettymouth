@@ -15,8 +15,14 @@
 │   ├── 05_model_comp.py
 │   ├── 06_state_pattern_cluster.py
 │   ├── 07_group_cluster_comp.py
+│   ├── 07_map_cluster2stateseq.py
+│   ├── 08_behav_proc.py
+│   ├── 08_get_audio_arousal.py
+│   ├── 08_stimuli_annot.py
+│   ├── 09_behavior_content_glmm.py
+│   ├── 09_brain_content_glmm.py
+│   ├── 09_brain_content_glmm.sh
 │   ├── 10_character_state_group_comp.py
-│   ├── 10_stimuli_annot.py
 │   ├── 10_story_content_analysis.py
 │   ├── 11_brain_content_analysis.py
 │   ├── 12_behav_content_analysis.py
@@ -24,7 +30,6 @@
 │   ├── __init__.py
 │   ├── behav
 │   │   ├── 01_behav_proc.ipynb
-│   │   ├── 01_behav_proc.py
 │   │   ├── 01_behav_proc02.ipynb
 │   │   ├── 01_behav_proc_draft.ipynb
 │   │   ├── 02_behav_content_analysis.py
@@ -39,6 +44,7 @@
 │   ├── figures.ipynb
 │   └── utils
 │       ├── __init__.py
+│       ├── glmm.py
 │       └── pattern_cluster.py
 ├── environment.yml
 ├── generate_tree.sh
@@ -66,5 +72,5 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 60 files
+6 directories, 66 files
 ```
