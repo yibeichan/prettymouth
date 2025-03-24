@@ -339,7 +339,7 @@ def main():
     scratch_dir = os.getenv('SCRATCH_DIR')
     output_dir = os.path.join(scratch_dir, 'output')
     thresholds = [0.60, 0.65, 0.70, 0.75, 0.8, 0.85, 0.9]
-    groups = ['affair', 'paranoia', 'combined']
+    groups = ['affair', 'paranoia', 'combined', 'constructed']
     for threshold in thresholds:
         if threshold > 0.8:
             top_clusters = 3
