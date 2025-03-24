@@ -404,8 +404,8 @@ class BehavioralContentAnalysis:
                         row['interaction_prob'] = result['posterior_prob'][interaction_key]
                 
                 # Add significance from multiple comparison
-                if 'multiple_comparison' in result and 'significant_effects' in result['multiple_comparison']:
-                    row['fdr_significant'] = interaction_key in result['multiple_comparison']['significant_effects']
+                if 'multiple_comparison' in result and 'credible_effects' in result['multiple_comparison']:
+                    row['fdr_credible'] = interaction_key in result['multiple_comparison']['credible_effects']
                 
                 # Add odds ratios
                 if 'odds_ratios' in result:

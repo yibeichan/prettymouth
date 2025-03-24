@@ -13,11 +13,15 @@ import logging
 import time
 from datetime import datetime
 from utils.glmm import BayesianGLMMAnalyzer
+import pickle
 
 warnings.filterwarnings('ignore')
 
 class HierarchicalStateAnalysis:
-    def __init__(self, data_type, cluster_id, threshold, data_dir, output_dir, n_cv_folds=5, coding_type="deviation", reference_group="affair", log_level=logging.INFO):
+    def __init__(self, data_type, cluster_id, threshold, data_dir, output_dir, 
+                 n_cv_folds=5, coding_type="deviation", reference_group="affair", 
+                 model_pattern=None, affair_model_pattern=None, paranoia_model_pattern=None, 
+                 combined_group="combined", log_level=logging.INFO):
         """Initialize the state analysis with paths and parameters"""
         self.data_type = data_type
         self.cluster_id = cluster_id
@@ -29,10 +33,27 @@ class HierarchicalStateAnalysis:
         self.coding_type = coding_type
         self.reference_group = reference_group
         
-        self.folder_name = f"cluster{self.cluster_id}_{self.data_type}_{self.coding_type}_th{self.threshold}"
+        # Model pattern parameters
+        self.model_pattern = model_pattern
+        self.affair_model_pattern = affair_model_pattern
+        self.paranoia_model_pattern = paranoia_model_pattern
+        self.combined_group = combined_group
+        
+        # Generate folder name with model pattern info
+        if data_type == "combined":
+            self.folder_name = f"cluster{self.cluster_id}_{self.data_type}_{self.combined_group}_{self.model_pattern}_{self.coding_type}_th{self.threshold}"
+        else:  # paired
+            self.folder_name = f"cluster{self.cluster_id}_{self.data_type}_a{self.affair_model_pattern}_p{self.paranoia_model_pattern}_{self.coding_type}_th{self.threshold}"
+        
         # Setup logging
         self.setup_logging(log_level)
         self.logger.info(f"Initializing analysis: data_type={data_type}, cluster_id={cluster_id}")
+        
+        if data_type == "combined":
+            self.logger.info(f"Model configuration: combined_group={combined_group}, model_pattern={model_pattern}")
+        else:  # paired
+            self.logger.info(f"Model configuration: affair_model_pattern={affair_model_pattern}, paranoia_model_pattern={paranoia_model_pattern}")
+            
         self.logger.info(f"Parameters: coding_type={coding_type}, reference_group={reference_group}, n_cv_folds={n_cv_folds}")
         
         # Initialize the GLMM analyzer
@@ -91,30 +112,73 @@ class HierarchicalStateAnalysis:
             self.content_df = pd.read_csv(self.data_dir / '10_story_annotations_tr.csv')
             self.logger.info(f"Loaded content features: {len(self.content_df)} timepoints")
             
+            # Define paths based on the data type
             if self.data_type == "combined":
-                self.logger.debug(f"Loading combined sequence data for cluster {self.cluster_id}")
-                sequence_path = self.output_dir / '07_cluster_state_mapping' / f'th_{self.threshold}' / 'combined' / f'cluster_{self.cluster_id}_sequences.npy'
-                self.logger.debug(f"Sequence path: {sequence_path}")
+                base_path = self.output_dir / '07_extracted_cluster_data' / f'th_{self.threshold}_{self.combined_group}_{self.model_pattern}_cluster{self.cluster_id}'
+                pickle_file = base_path / f'all_subjects_cluster_{self.cluster_id}_timeseries.pkl'
+                self.logger.debug(f"Loading combined pickle data from: {pickle_file}")
                 
-                self.sequence_data = np.load(sequence_path)
-                n_subjects = self.sequence_data.shape[0]
-                self.logger.info(f"Loaded combined sequence data: {n_subjects} subjects, {self.sequence_data.shape[1]} timepoints")
+                with open(pickle_file, 'rb') as f:
+                    subject_data = pickle.load(f)
                 
-                self.affair_sequences = self.sequence_data[:n_subjects//2, :]
-                self.paranoia_sequences = self.sequence_data[n_subjects//2:, :] 
+                # Process all subjects
+                affair_subjects = []
+                paranoia_subjects = []
+                
+                # Sort subjects by group
+                affair_ids = []
+                paranoia_ids = []
+                for subject_id, data in subject_data.items():
+                    if data['group'] == 'affair':
+                        affair_ids.append(subject_id)
+                    elif data['group'] == 'paranoia':
+                        paranoia_ids.append(subject_id)
+                
+                # Sort subject IDs to ensure consistent ordering
+                affair_ids.sort()
+                paranoia_ids.sort()
+                
+                # Extract timeseries data in correct order
+                for subject_id in affair_ids:
+                    affair_subjects.append(subject_data[subject_id]['timeseries'])
+                
+                for subject_id in paranoia_ids:
+                    paranoia_subjects.append(subject_data[subject_id]['timeseries'])
+                
+                # Convert to numpy arrays
+                self.affair_sequences = np.array(affair_subjects)
+                self.paranoia_sequences = np.array(paranoia_subjects)
+                
                 self.logger.info(f"Split data: {self.affair_sequences.shape[0]} affair subjects, {self.paranoia_sequences.shape[0]} paranoia subjects")
                 
             elif self.data_type == "paired":
-                self.logger.debug(f"Loading separate sequence data for cluster {self.cluster_id}")
+                # Load affair data
+                affair_path = self.output_dir / '07_extracted_cluster_data' / f'th_{self.threshold}_affair_{self.affair_model_pattern}_cluster{self.cluster_id}'
+                affair_pickle = affair_path / f'all_subjects_cluster_{self.cluster_id}_timeseries.pkl'
+                self.logger.debug(f"Loading affair pickle data from: {affair_pickle}")
                 
-                affair_path = self.output_dir / '07_cluster_state_mapping' / f'th_{self.threshold}' / 'affair' / f'cluster_{self.cluster_id}_sequences.npy'
-                paranoia_path = self.output_dir / '07_cluster_state_mapping' / f'th_{self.threshold}' / 'paranoia' / f'cluster_{self.cluster_id}_sequences.npy'
+                with open(affair_pickle, 'rb') as f:
+                    affair_data = pickle.load(f)
                 
-                self.logger.debug(f"Affair path: {affair_path}")
-                self.logger.debug(f"Paranoia path: {paranoia_path}")
+                # Load paranoia data
+                paranoia_path = self.output_dir / '07_extracted_cluster_data' / f'th_{self.threshold}_paranoia_{self.paranoia_model_pattern}_cluster{self.cluster_id}'
+                paranoia_pickle = paranoia_path / f'all_subjects_cluster_{self.cluster_id}_timeseries.pkl'
+                self.logger.debug(f"Loading paranoia pickle data from: {paranoia_pickle}")
                 
-                self.affair_sequences = np.load(affair_path)
-                self.paranoia_sequences = np.load(paranoia_path)
+                with open(paranoia_pickle, 'rb') as f:
+                    paranoia_data = pickle.load(f)
+                
+                # Sort subject IDs to ensure consistent ordering
+                affair_ids = sorted(affair_data.keys())
+                paranoia_ids = sorted(paranoia_data.keys())
+                
+                # Extract timeseries data in correct order
+                affair_subjects = [affair_data[subject_id]['timeseries'] for subject_id in affair_ids]
+                paranoia_subjects = [paranoia_data[subject_id]['timeseries'] for subject_id in paranoia_ids]
+                
+                # Convert to numpy arrays
+                self.affair_sequences = np.array(affair_subjects)
+                self.paranoia_sequences = np.array(paranoia_subjects)
                 
                 self.logger.info(f"Loaded affair sequences: {self.affair_sequences.shape[0]} subjects, {self.affair_sequences.shape[1]} timepoints")
                 self.logger.info(f"Loaded paranoia sequences: {self.paranoia_sequences.shape[0]} subjects, {self.paranoia_sequences.shape[1]} timepoints")
@@ -413,8 +477,8 @@ class HierarchicalStateAnalysis:
                     fdr = expected_false / (i + 1)
                     fdr_values.append(fdr)
                 
-                # Find significant effects (FDR < 0.05)
-                significant = [
+                # Find credible effects (FDR < 0.05)
+                credible = [
                     sorted_effects[i][0] for i in range(len(fdr_values))
                     if fdr_values[i] < 0.05
                 ]
@@ -422,7 +486,7 @@ class HierarchicalStateAnalysis:
                 # Add FDR info to results
                 fdr_results = {
                     'fdr_threshold': 0.05,
-                    'significant_effects': significant,
+                    'credible_effects': credible,
                     'all_effects': {
                         effect[0]: {
                             'posterior_prob': float(probs[i]),  # Ensure stored as float
@@ -432,15 +496,15 @@ class HierarchicalStateAnalysis:
                     }
                 }
                 
-                self.logger.info(f"FDR correction complete. Found {len(significant)} significant interaction effects")
-                for sig in significant:
+                self.logger.info(f"FDR correction complete. Found {len(credible)} credible interaction effects")
+                for sig in credible:
                     self.logger.debug(f"Significant effect: {sig}")
             else:
                 self.logger.info("No effects to apply FDR correction")
-                fdr_results = {'significant_effects': []}
+                fdr_results = {'credible_effects': []}
         else:
             self.logger.warning("No feature results available for multiple comparison correction")
-            fdr_results = {'significant_effects': []}
+            fdr_results = {'credible_effects': []}
             
         # Collect results
         analysis_results = {
@@ -703,14 +767,14 @@ class HierarchicalStateAnalysis:
                     if 'posterior_prob' in res and interaction_key in res['posterior_prob']:
                         feature_summary['interaction_posterior_prob'] = res['posterior_prob'][interaction_key]
                 
-                # Check if significant in multiple comparison
+                # Check if credible in multiple comparison
                 feature_interaction = f"{feature}:{interaction_key}"
                 if 'multiple_comparison' in results['main_analysis']:
                     mc_results = results['main_analysis']['multiple_comparison']
-                    feature_summary['significant'] = feature_interaction in mc_results.get('significant_effects', [])
+                    feature_summary['credible'] = feature_interaction in mc_results.get('credible_effects', [])
                     
-                    if feature_summary['significant']:
-                        self.logger.info(f"Feature {feature}: SIGNIFICANT interaction effect after FDR correction")
+                    if feature_summary['credible']:
+                        self.logger.info(f"Feature {feature}: CREDIBLE interaction effect after FDR correction")
                     
                     # Get FDR if available
                     if 'all_effects' in mc_results and feature_interaction in mc_results['all_effects']:
@@ -848,7 +912,14 @@ def main():
                         help='Coding type for analysis (default: deviation)')
     parser.add_argument('--reference_group', default="affair", 
                         help='Reference group for analysis (default: affair)')
-    
+    parser.add_argument('--model_pattern', 
+                        help='Model pattern for combined data type (e.g., "5states")')
+    parser.add_argument('--affair_model_pattern', 
+                        help='Model pattern for affair group when using paired data type')
+    parser.add_argument('--paranoia_model_pattern', 
+                        help='Model pattern for paranoia group when using paired data type')
+    parser.add_argument('--combined_group', default="combined",
+                        help='Group name for combined data (default: combined)')
     # Parse arguments
     args = parser.parse_args()
     
@@ -856,6 +927,9 @@ def main():
     scratch_dir = os.getenv("SCRATCH_DIR")
     output_dir = Path(scratch_dir) / "output"
     data_dir = Path(scratch_dir) / "data" / "stimuli"
+    
+    # Format threshold string for paths
+    threshold_str = f"{args.threshold:.2f}".replace('.', '')
     
     # Setup global logging
     logging.basicConfig(
@@ -871,9 +945,24 @@ def main():
     logger.info("Starting hierarchical state analysis")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Data directory: {data_dir}")
-    logger.info(f"Parameters: threshold={args.threshold}, data_type={args.data_type}, "
-               f"cluster_id={args.cluster_id}, coding_type={args.coding_type}, "
-               f"reference_group={args.reference_group}")
+
+    # Verify model pattern parameters based on data type
+    if args.data_type == "combined":
+        if not args.model_pattern:
+            logger.error("Error: --model_pattern is required for combined data type")
+            return
+        logger.info(f"Parameters: threshold={args.threshold}, data_type={args.data_type}, "
+                   f"cluster_id={args.cluster_id}, model_pattern={args.model_pattern}, "
+                   f"combined_group={args.combined_group}, coding_type={args.coding_type}, "
+                   f"reference_group={args.reference_group}")
+    elif args.data_type == "paired":
+        if not args.affair_model_pattern or not args.paranoia_model_pattern:
+            logger.error("Error: --affair_model_pattern and --paranoia_model_pattern are required for paired data type")
+            return
+        logger.info(f"Parameters: threshold={args.threshold}, data_type={args.data_type}, "
+                   f"cluster_id={args.cluster_id}, affair_model_pattern={args.affair_model_pattern}, "
+                   f"paranoia_model_pattern={args.paranoia_model_pattern}, coding_type={args.coding_type}, "
+                   f"reference_group={args.reference_group}")
     
     total_start_time = time.time()
     all_results = {}
@@ -885,19 +974,29 @@ def main():
     
     cluster_start_time = time.time()
     logger.info(f"=== Starting analysis for data_type={data_type}, cluster_id={cluster_id} ===")
+    
+    # Prepare analysis parameters
+    analysis_params = {
+        "data_type": data_type,
+        "cluster_id": cluster_id,
+        "threshold": threshold,
+        "data_dir": data_dir,
+        "output_dir": output_dir,
+        "n_cv_folds": 5,
+        "coding_type": args.coding_type,
+        "reference_group": args.reference_group
+    }
+    
+    # Add appropriate model parameters based on data type
+    if data_type == "combined":
+        analysis_params["model_pattern"] = args.model_pattern
+        analysis_params["combined_group"] = args.combined_group
+    elif data_type == "paired":
+        analysis_params["affair_model_pattern"] = args.affair_model_pattern
+        analysis_params["paranoia_model_pattern"] = args.paranoia_model_pattern
             
     # Initialize analysis
-    analysis = HierarchicalStateAnalysis(
-
-        data_type=data_type,
-        cluster_id=cluster_id,
-        threshold=threshold,
-        data_dir=data_dir,
-        output_dir=output_dir,
-        n_cv_folds=5,
-        coding_type=args.coding_type,
-        reference_group=args.reference_group
-    )
+    analysis = HierarchicalStateAnalysis(**analysis_params)
     
     try:
         # Load data
@@ -926,6 +1025,5 @@ def main():
     total_time = time.time() - total_start_time
     logger.info(f"Complete analysis pipeline finished in {total_time:.2f} seconds")
     logger.info(f"Successfully completed: {sum(1 for v in all_results.values() if v)}/{len(all_results)} analyses")
-
 if __name__ == "__main__":
     main()

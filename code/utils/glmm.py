@@ -176,7 +176,7 @@ class BayesianGLMMAnalyzer:
         print("\n=== Checking for Temporal Autocorrelation ===")
         
         autocorr_results = {}
-        significant_count = 0
+        credible_count = 0
         
         # Analyze autocorrelation for each subject
         for subject in sorted(model_data['subject'].unique()):
@@ -195,7 +195,7 @@ class BayesianGLMMAnalyzer:
                 # Check if any lag has significant autocorrelation
                 is_significant = any(p < 0.05 for p in lb_test[1])
                 if is_significant:
-                    significant_count += 1
+                    credible_count += 1
                 
                 autocorr_results[f'subject_{subject}'] = {
                     'lb_statistic': lb_test[0].tolist(),
@@ -240,12 +240,12 @@ class BayesianGLMMAnalyzer:
         # Summary statistics
         summary = {
             'subjects_tested': len(autocorr_results),
-            'subjects_with_autocorr': significant_count,
-            'percent_with_autocorr': 100 * significant_count / len(autocorr_results) if autocorr_results else 0,
+            'subjects_with_autocorr': credible_count,
+            'percent_with_autocorr': 100 * credible_count / len(autocorr_results) if autocorr_results else 0,
             'avg_acf': acf_avg.tolist() if acf_count > 0 else None
         }
         
-        print(f"{significant_count} out of {len(autocorr_results)} subjects show significant autocorrelation")
+        print(f"{credible_count} out of {len(autocorr_results)} subjects show significant autocorrelation")
         
         # Return both detailed and summary results
         return {
@@ -1168,9 +1168,9 @@ class BayesianGLMMAnalyzer:
             return {
                 'all_effects': [],
                 'posterior_probs': {},
-                'significant_effects': [],
-                'significant_main_effects': [],
-                'significant_interactions': [],
+                'credible_effects': [],
+                'credible_main_effects': [],
+                'credible_interactions': [],
                 'fdr_threshold': 0.05,
                 'cumulative_fdr': {}
             }
@@ -1198,15 +1198,15 @@ class BayesianGLMMAnalyzer:
         passing_effects = sorted_effects[passing_idx].tolist() if len(passing_idx) > 0 else []
         
         # Separate significant effects by type
-        significant_main = [effect for effect in passing_effects if effect in main_effects]
-        significant_interactions = [effect for effect in passing_effects if effect in interaction_terms]
+        credible_main = [effect for effect in passing_effects if effect in main_effects]
+        credible_interactions = [effect for effect in passing_effects if effect in interaction_terms]
         
         return {
             'all_effects': all_effects,
             'posterior_probs': dict(zip(all_effects, all_probs)),
-            'significant_effects': passing_effects,
-            'significant_main_effects': significant_main,
-            'significant_interactions': significant_interactions,
+            'credible_effects': passing_effects,
+            'credible_main_effects': credible_main,
+            'credible_interactions': credible_interactions,
             'fdr_threshold': fdr_threshold,
             'cumulative_fdr': dict(zip(sorted_effects, cumulative_fdr))
         }
