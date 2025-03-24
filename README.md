@@ -72,6 +72,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -89,6 +90,7 @@
 │   ├── 04_single_group_hmm_ntw.sh
 │   ├── 05_model_comp.py
 │   ├── 06_state_pattern_cluster.py
+│   ├── 07_extract_cluster_data.py
 │   ├── 07_group_cluster_comp.py
 │   ├── 07_map_cluster2stateseq.py
 │   ├── 08_behav_proc.py
@@ -147,6 +149,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 66 files
+6 directories, 67 files
 ```
 <!-- TREE_END -->
