@@ -73,6 +73,7 @@
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -94,21 +95,15 @@
 │   ├── 07_group_cluster_comp.py
 │   ├── 07_map_cluster2stateseq.py
 │   ├── 08_behav_proc.py
-│   ├── 08_get_audio_arousal.py
 │   ├── 08_stimuli_annot.py
 │   ├── 09_behavior_content_glmm.py
 │   ├── 09_brain_content_glmm.py
 │   ├── 09_brain_content_glmm.sh
-│   ├── 10_character_state_group_comp.py
-│   ├── 10_story_content_analysis.py
-│   ├── 11_brain_content_analysis.py
-│   ├── 12_behav_content_analysis.py
 │   ├── 13_glmm_brain_summary.py
 │   ├── __init__.py
 │   ├── behav
 │   │   ├── 01_behav_proc.ipynb
 │   │   ├── 01_behav_proc02.ipynb
-│   │   ├── 01_behav_proc_draft.ipynb
 │   │   ├── 02_behav_content_analysis.py
 │   │   ├── 02_group_diff.ipynb
 │   │   ├── __init__.py
@@ -118,7 +113,8 @@
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
 │   ├── figure4.ipynb
-│   ├── figures.ipynb
+│   ├── figure5.ipynb
+│   ├── numbers.ipynb
 │   └── utils
 │       ├── __init__.py
 │       ├── glmm.py
@@ -149,6 +145,6 @@
     ├── segments_timing_yc.xlsx
     └── word_by_onset.csv
 
-6 directories, 67 files
+6 directories, 62 files
 ```
 <!-- TREE_END -->
