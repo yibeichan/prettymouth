@@ -530,7 +530,8 @@ class StatePatternAnalyzer:
 
     def _create_consensus_pattern_plot(self, sorted_clusters, network_labels):
         """Create a plot of consensus patterns with a stacked bar plot of group counts."""
-        num_clusters_to_show = min(25, len(sorted_clusters))
+        # Show only top 10 clusters
+        num_clusters_to_show = min(10, len(sorted_clusters))
         
         if num_clusters_to_show == 0:
             self.logger.warning("No clusters to display in consensus pattern plot")
@@ -547,25 +548,23 @@ class StatePatternAnalyzer:
             group_names.update(data['group_counts'].keys())
         group_names = sorted(list(group_names))
         
-        # Create figure with gridspec for 3 panels with adjusted ratios for a more square heatmap
-        fig = plt.figure(figsize=(7, 6))  # Adjust overall figure proportions to be closer to square
-        gs = gridspec.GridSpec(2, 2, 
-                              height_ratios=[2, 3],      # Keep the top histogram height ratio
-                              width_ratios=[2.5, 2.5],     # Make the heatmap proportionally narrower 
-                              hspace=0,               # Add minimal spacing for clarity
-                              wspace=0)               # Add minimal spacing for clarity
+        # Create figure with gridspec for 2 panels (removed top histogram)
+        fig = plt.figure(figsize=(3.5, 1.8))
+        gs = gridspec.GridSpec(1, 2, 
+                            width_ratios=[2.5, 1],  # Reduce width of stacked bar plot
+                            wspace=0)          # Minimal spacing for clarity
 
-        ax_hist = plt.subplot(gs[0, 0])   # Top histogram
-        ax_heat = plt.subplot(gs[1, 0])   # Main heatmap
-        ax_bars = plt.subplot(gs[1, 1])   # Right stacked bars
+        ax_heat = plt.subplot(gs[0, 0])   # Main heatmap
+        ax_bars = plt.subplot(gs[0, 1])   # Right stacked bars (narrower)
 
         # Create cluster labels with occupancy information
         cluster_labels = []
         
         for i, (cluster_id, data) in enumerate(sorted_clusters[:num_clusters_to_show]):
-            # Format label with size and occupancy
+            # Format label with occupancy only (removed n=xx)
             occ_formatted = f"{data['total_fractional_occupancy']:.2f}" if data['total_fractional_occupancy'] else "0.00"
-            label = f"C{cluster_id} (n={data['size']}, occ={occ_formatted})"
+            # label = f"C{cluster_id} (occ={occ_formatted})"
+            label = f"C{cluster_id}"
             cluster_labels.append(label)
         
         # Use total_occupancies for weighting the visualization
@@ -586,11 +585,11 @@ class StatePatternAnalyzer:
             for j in range(cols):
                 if weighted_patterns[i, j] > 0:
                     rect = plt.Rectangle((j - 0.5, i - 0.5), 1, 1, 
-                                      fill=False,
-                                      hatch='///',
-                                      color='blueviolet',
-                                      alpha=0.5, 
-                                      zorder=2)
+                                    fill=False,
+                                    hatch='///',
+                                    color='blueviolet',
+                                    alpha=0.5, 
+                                    zorder=2)
                     ax_heat.add_patch(rect)
         
         # Set y-axis labels (clusters)
@@ -601,33 +600,6 @@ class StatePatternAnalyzer:
         feature_indices = np.arange(0, consensus_patterns.shape[1], 1)
         ax_heat.set_xticks(feature_indices)
         ax_heat.set_xticklabels([network_labels[i] for i in range(len(feature_indices))], rotation=90)
-        
-        # Count how many clusters show activity for each network
-        column_counts = np.sum(consensus_patterns != 0, axis=0)
-        bars = ax_hist.bar(feature_indices, column_counts, align='center', alpha=0.7, color='slateblue', width=0.9)
-        
-        # Add count labels on the bars instead of on top
-        for bar in bars:
-            height = bar.get_height()
-            y_position = height / 2  # Place text in the middle of the bar
-            
-            # Adjust text color based on bar height for visibility
-            text_color = 'white' if height > (max(column_counts) / 3) else 'darkblue'
-            
-            ax_hist.text(bar.get_x() + bar.get_width()/2., y_position,
-                        f'{int(height)}', color=text_color, fontsize=5,
-                        ha='center', va='center', rotation=0, fontweight='bold')
-        
-        # Remove spines for histogram
-        ax_hist.spines['top'].set_visible(False)
-        ax_hist.spines['right'].set_visible(False)
-        ax_hist.spines['left'].set_visible(False)
-        ax_hist.spines['bottom'].set_visible(False)
-        ax_hist.set_xticks([])
-        ax_hist.set_yticks([])
-        
-        # Share x-axis between histogram and heatmap
-        ax_hist.set_xlim(ax_heat.get_xlim())
         
         # Create stacked bar plot for group counts
         # Define colors for groups
@@ -644,7 +616,7 @@ class StatePatternAnalyzer:
         for j, group in enumerate(group_names):
             values = group_data[:, j]
             bars = ax_bars.barh(range(num_clusters_to_show), values, left=bottoms, 
-                             label=group, color=color_map[group], height=0.9)
+                            label=group, color=color_map[group], height=0.9)
             
             # Add count labels on bars if there's enough space
             for i, bar in enumerate(bars):
@@ -653,7 +625,7 @@ class StatePatternAnalyzer:
                     # Only show text if the segment is wide enough
                     if width > max(values) * 0.05:  # Minimum width threshold for showing text
                         ax_bars.text(bottoms[i] + width/2, i, 
-                                    f'{int(width)}', color='white', fontsize=5,
+                                    f'{int(width)}', color='white', fontsize=4,
                                     ha='center', va='center', fontweight='bold')
             
             # Update bottoms INSIDE the loop after each group's bars are drawn
@@ -666,36 +638,21 @@ class StatePatternAnalyzer:
         ax_bars.set_ylim(ax_heat.get_ylim())
         # remove spines
         ax_bars.spines['bottom'].set_visible(False)
-        
-        # Set bar plot title and legend
-        # ax_bars.set_title('Group Counts', fontsize=10)
-        
-        # Adjust legend - place it underneath the bar plot
-        # First, get current position of the bar plot
-        pos = ax_bars.get_position()
-        
-        # Make space for legend by reducing height of the bar plot
-        ax_bars.set_position([pos.x0, pos.y0, pos.width, pos.height])
-        
-
-        legend = ax_bars.legend(title="Groups", 
-                            loc='lower right',          # Position at lower right
-                            fontsize='x-small',         # Smaller font size (smaller than 'small')
-                            title_fontsize='small',     # Smaller title font
-                            ncol=1,  # More columns to make it more compact
-                            frameon=True,
-                            framealpha=0.8,
-                            markerscale=0.7,            # Make the markers smaller
-                            handlelength=1.5,           # Shorter handles
-                            handletextpad=0.5)          # Less padding between handle and text
-        
-        # Remove unnecessary spines
         ax_bars.spines['top'].set_visible(False)
         ax_bars.spines['right'].set_visible(False)
         
-        # Adjust overall layout
-        # fig.suptitle('Consensus Patterns for Top Clusters\n(Color Intensity ∝ Fractional Occupancy)')
-        plt.tight_layout(rect=[0, 0.02, 1, 0.97])
+        # legend = ax_bars.legend(title="Groups", 
+        #                     loc='lower right',          
+        #                     fontsize='x-small',        
+        #                     title_fontsize='small',    
+        #                     ncol=1,  
+        #                     frameon=True,
+        #                     framealpha=0.8,
+        #                     markerscale=0.7,           
+        #                     handlelength=1.5,          
+        #                     handletextpad=0.5)        
+        
+        plt.tight_layout()
         
         # Save figure
         plt.savefig(self.output_dir / 'consensus_patterns_with_groups.png', dpi=300, bbox_inches='tight')
@@ -785,7 +742,7 @@ class StatePatternAnalyzer:
                                  annot=True, 
                                  fmt='g', 
                                  cmap="rainbow", 
-                                 cbar=False,
+                                 cbar=True,
                                  linewidths=0.5, 
                                  linecolor='white',
                                  annot_kws={'size': 6})
@@ -919,64 +876,3 @@ class StatePatternAnalyzer:
         self.logger.info(f"Analysis complete. Execution time: {execution_time:.2f} seconds")
         
         return self.cluster_info
-
-# def main():
-#     from dotenv import load_dotenv
-#     load_dotenv()
-        
-#     # Setup paths
-#     scratch_dir = os.getenv("SCRATCH_DIR")
-#     base_dir = os.path.join(scratch_dir, "output")
-#     output_dir = os.path.join(base_dir, "06_state_pattern_clusters")
-
-#     # Set up argument parser
-#     parser = argparse.ArgumentParser(description='Extract and cluster state patterns from HMM results')
-    
-#     parser.add_argument('--groups', type=str, nargs='+', default=["affair", "paranoia", "combined"], 
-#                         help='List of groups to analyze')
-#     parser.add_argument('--min_activation', type=float, default=0.1, help='Minimum activation threshold')
-#     parser.add_argument('--max_ci_width', type=float, default=0.3, help='Maximum CI width threshold')
-#     parser.add_argument('--min_pattern_stability', type=float, default=0.7, help='Minimum pattern stability')
-#     parser.add_argument('--cluster_similarity', type=float, default=0.7, help='Cluster similarity threshold')
-#     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
-    
-#     args = parser.parse_args()
-#     # Ensure output directory exists
-#     os.makedirs(output_dir, exist_ok=True)
-    
-#     # Setup logging
-#     log_level = logging.DEBUG if args.verbose else logging.INFO
-#     logging.basicConfig(
-#         level=log_level,
-#         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-#         handlers=[
-#             logging.FileHandler(os.path.join(output_dir, "pattern_analysis.log")),
-#             logging.StreamHandler()
-#         ]
-#     )
-    
-#     # Create config from args
-#     config = {
-#         'min_activation': args.min_activation,
-#         'max_ci_width': args.max_ci_width,
-#         'min_pattern_stability': args.min_pattern_stability,
-#         'cluster_similarity_threshold': args.cluster_similarity
-#     }
-    
-#     try:
-#         # Create and run analyzer
-#         analyzer = StatePatternAnalyzer(
-#             base_dir=base_dir,
-#             groups=args.groups,
-#             output_dir=output_dir,
-#             config=config
-#         )
-        
-#         analyzer.run_analysis()
-        
-#     except Exception as e:
-#         logging.error(f"Error during analysis: {e}", exc_info=True)
-#         raise
-
-# if __name__ == '__main__':
-#     main()

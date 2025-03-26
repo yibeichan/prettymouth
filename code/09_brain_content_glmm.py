@@ -41,7 +41,7 @@ class HierarchicalStateAnalysis:
         
         # Generate folder name with model pattern info
         if data_type == "combined":
-            self.folder_name = f"cluster{self.cluster_id}_{self.data_type}_{self.combined_group}_{self.model_pattern}_{self.coding_type}_th{self.threshold}"
+            self.folder_name = f"cluster{self.cluster_id}_{self.data_type}_{self.model_pattern}_{self.coding_type}_th{self.threshold}"
         else:  # paired
             self.folder_name = f"cluster{self.cluster_id}_{self.data_type}_a{self.affair_model_pattern}_p{self.paranoia_model_pattern}_{self.coding_type}_th{self.threshold}"
         
