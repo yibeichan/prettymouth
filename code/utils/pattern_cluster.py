@@ -756,6 +756,9 @@ class StatePatternAnalyzer:
                 plt.ylabel('')
                 
                 plt.tight_layout()
+                if group == "constructed":
+                    group = "balanced"
+                
                 plt.savefig(self.output_dir / f'{group}_model_clusters.png', dpi=300)
                 plt.savefig(self.output_dir / f'{group}_model_clusters.svg', dpi=300)
                 print(f"Saved {group}_model_clusters.png and {group}_model_clusters.svg")
