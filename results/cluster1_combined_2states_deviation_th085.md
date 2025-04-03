@@ -1,6 +1,6 @@
-# Brain State Dynamics Analysis Supplementary Material
+# Brain State GLMM Analysis Results
 
-This document contains all statistical tables from the brain state dynamics analysis.
+This document contains all statistical tables from the brain state GLMM analysis.
 
 ## Table of Contents
 

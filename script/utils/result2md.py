@@ -330,9 +330,9 @@ def brain_generate_markdown(data_path, output_path="brain_state_analysis_results
     paper_tables = brain_create_paper_tables(data)
     
     # Create markdown string with all tables
-    markdown_content = """# Brain State Dynamics Analysis Supplementary Material
+    markdown_content = """# Brain State GLMM Analysis Results
 
-This document contains all statistical tables from the brain state dynamics analysis.
+This document contains all statistical tables from the brain state GLMM analysis.
 
 ## Table of Contents
 

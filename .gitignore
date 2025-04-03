@@ -6,9 +6,9 @@
 *analysis*ipynb
 code/03_OHBM_poster_v4.ipynb
 
-R/
+R/*
 stimuli/
-code/behav/
+script/behav/
 data/
 logs/
 output/
