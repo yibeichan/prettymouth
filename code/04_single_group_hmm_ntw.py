@@ -2389,7 +2389,7 @@ def run_single_group_analysis(data: np.ndarray,
         
         # Setup output directories
         analyzer.setup_output_directories(output_dir)
-        if group_name.lower() == "constructed":
+        if group_name.lower() == "balanced":
             # save selected indices
             with open(analyzer.stats_dir / f"{group_name}_selected_indices.json", 'w') as f:
                 json.dump(selected_indices, f, indent=4)
@@ -2614,7 +2614,7 @@ def load_group_data(scratch_dir: str, res: str, group_name: str) -> np.ndarray:
         elif group_name.lower() == "combined":
             subjects_to_load = affair_subjects + paranoia_subjects
             logging.info(f"Loading {len(subjects_to_load)} combined subjects ({len(affair_subjects)} affair, {len(paranoia_subjects)} paranoia)")
-        elif group_name.lower() == "constructed":
+        elif group_name.lower() == "balanced":
             # Set a fixed random seed for reproducibility
             np.random.seed(42)
             
@@ -2637,9 +2637,9 @@ def load_group_data(scratch_dir: str, res: str, group_name: str) -> np.ndarray:
             }
             
             subjects_to_load = selected_affair + selected_paranoia
-            logging.info(f"Constructed balanced group with {len(subjects_to_load)} subjects (9 affair, 10 paranoia)")
+            logging.info(f"Balanced group with {len(subjects_to_load)} subjects (9 affair, 10 paranoia)")
         else:
-            raise ValueError(f"Unknown group name: {group_name}. Valid options are 'affair', 'paranoia', 'combined', or 'constructed'")
+            raise ValueError(f"Unknown group name: {group_name}. Valid options are 'affair', 'paranoia', 'combined', or 'balanced'")
         
         # Find all network files
         all_files = list(data_path.glob("*.npy"))

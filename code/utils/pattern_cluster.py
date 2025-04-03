@@ -40,8 +40,8 @@ COLORS = {
     'paranoia_light': '#90ee90', # Light green
     'combined': '#984ea3',    # Purple
     'combined_light': '#d8b2d8', # Light purple
-    'constructed': '#377eb8',   # Blue
-    'constructed_light': '#99c2ff' # Light blue
+    'balanced': '#377eb8',   # Blue
+    'balanced_light': '#99c2ff' # Light blue
 }
 
 class NumpyEncoder(json.JSONEncoder):

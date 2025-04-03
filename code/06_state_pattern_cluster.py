@@ -631,7 +631,7 @@ if __name__ == "__main__":
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     thresholds = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
-    groups = ["affair", "paranoia", "combined", "constructed"]
+    groups = ["affair", "paranoia", "combined", "balanced"]
 
     # Setup logging
     logging.basicConfig(

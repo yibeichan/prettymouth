@@ -25,8 +25,8 @@ COLORS = {
     'paranoia_light': '#90ee90', # Light green
     'combined': '#984ea3',    # Purple
     'combined_light': '#d8b2d8', # Light purple
-    'constructed': '#377eb8',   # Blue
-    'constructed_light': '#99c2ff' # Light blue
+    'balanced': '#377eb8',   # Blue
+    'balanced_light': '#99c2ff' # Light blue
 }
 
 class GroupModelComparison:
@@ -1631,7 +1631,7 @@ if __name__ == "__main__":
         
     base_dir = os.path.join(scratch_dir, "output") if scratch_dir else "output"
     output_dir = os.path.join(base_dir, "07_group_cluster_comp")
-    groups = ["affair", "paranoia", "combined", "constructed"]
+    groups = ["affair", "paranoia", "combined", "balanced"]
     thresholds = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
 
     # Setup logging

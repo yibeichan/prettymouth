@@ -6,6 +6,9 @@
 *analysis*ipynb
 code/03_OHBM_poster_v4.ipynb
 
+R/
+stimuli/
+code/behav/
 data/
 logs/
 output/
@@ -15,7 +18,6 @@ config.txt
 .datalad
 .vscode
 code/nilearn_cache
-stimuli/*.wav
 */*_cache
 */.*
 */*/.*

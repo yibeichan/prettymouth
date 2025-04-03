@@ -89,7 +89,7 @@ def find_state_info_for_cluster(cluster_id, group, model_pattern, cluster_info, 
     
     Args:
         cluster_id: ID of the cluster to extract
-        group: Group name ('affair', 'paranoia', 'combined', 'constructed')
+        group: Group name ('affair', 'paranoia', 'combined', 'balanced')
         model_pattern: Pattern to match model name (e.g., '5states')
         cluster_info: Dictionary with cluster mapping information
         list_models: If True, just list available models and return None
@@ -156,7 +156,7 @@ def format_model_path(group, n_states):
     Format the model path based on group and number of states.
     
     Args:
-        group: Group name ('affair', 'paranoia', 'combined', 'constructed')
+        group: Group name ('affair', 'paranoia', 'combined', 'balanced')
         n_states: Number of states in the model
         
     Returns:
@@ -278,7 +278,7 @@ def create_subject_timeseries(state_sequences, state_info, output_dir):
         all_subjects = affair_subjects
     elif group == 'paranoia':
         all_subjects = paranoia_subjects
-    else:  # combined or constructed
+    else:  # combined or balanced
         all_subjects = affair_subjects + paranoia_subjects
     
     logging.info(f"Processing {len(all_subjects)} subjects from {group} group")
@@ -422,8 +422,8 @@ def main():
     parser.add_argument('--cluster-id', type=int, required=True,
                         help='Cluster ID to extract')
     parser.add_argument('--group', type=str, required=True, 
-                        choices=['affair', 'paranoia', 'combined', 'constructed'],
-                        help='Group to process (affair, paranoia, combined, constructed)')
+                        choices=['affair', 'paranoia', 'combined', 'balanced'],
+                        help='Group to process (affair, paranoia, combined, balanced)')
     parser.add_argument('--model-pattern', type=str,
                         help='Model pattern to match (e.g., "5states")')
     parser.add_argument('--threshold', type=float, required=True,
