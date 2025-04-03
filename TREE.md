@@ -22,8 +22,8 @@
 │   ├── 10_result2md.py
 │   ├── __init__.py
 │   └── utils
-│       ├── glmm.py
 │       ├── __init__.py
+│       ├── glmm.py
 │       ├── pattern_cluster.py
 │       └── result2md.py
 ├── environment.yml
@@ -34,8 +34,7 @@
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
 │   ├── figure4.ipynb
-│   ├── figure5.ipynb
-│   └── numbers.ipynb
+│   └── figure5.ipynb
 └── results
     ├── behavioral_content_analysis.md
     ├── cluster1_combined_2states_deviation_th085.md
@@ -43,5 +42,5 @@
     ├── cluster3_combined_2states_deviation_th085.md
     └── cluster4_combined_8states_deviation_th085.md
 
-6 directories, 45 files
+5 directories, 37 files
 ```
