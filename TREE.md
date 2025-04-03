@@ -1,5 +1,7 @@
 ```
 .
+├── README.md
+├── TREE.md
 ├── code
 │   ├── 01_postproc.py
 │   ├── 01_postproc.sh
@@ -26,22 +28,20 @@
 │       └── result2md.py
 ├── environment.yml
 ├── generate_tree.sh
-├── log.md
 ├── notebooks
 │   ├── behav.ipynb
 │   ├── figure1.ipynb
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
 │   ├── figure4.ipynb
-│   └── figure5.ipynb
-├── README.md
-├── results
-│   ├── behavioral_content_analysis.md
-│   ├── cluster1_combined_2states_deviation_th085.md
-│   ├── cluster2_combined_12states_deviation_th085.md
-│   ├── cluster3_combined_2states_deviation_th085.md
-│   └── cluster4_combined_8states_deviation_th085.md
-└── TREE.md
+│   ├── figure5.ipynb
+│   └── numbers.ipynb
+└── results
+    ├── behavioral_content_analysis.md
+    ├── cluster1_combined_2states_deviation_th085.md
+    ├── cluster2_combined_12states_deviation_th085.md
+    ├── cluster3_combined_2states_deviation_th085.md
+    └── cluster4_combined_8states_deviation_th085.md
 
-4 directories, 38 files
+6 directories, 45 files
 ```
