@@ -2,7 +2,7 @@
 
 # Generate directory structure without hidden files and exclude certain directories
 echo '```' > TREE.md
-tree -I '.git|node_modules|env|R|data|logs|stimuli' >> TREE.md
+tree -I '.git|node_modules|env|R|data|logs|stimuli|behav|_pycache_|_cache_|_cache|*.pyc|.vscode' >> TREE.md
 echo '```' >> TREE.md
 
 # Sync TREE.md to README.md
