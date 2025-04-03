@@ -2,30 +2,6 @@
 .
 ├── README.md
 ├── TREE.md
-├── code
-│   ├── 01_postproc.py
-│   ├── 01_postproc.sh
-│   ├── 02_extract_parcels.py
-│   ├── 03_get_networks.py
-│   ├── 04_single_group_hmm_ntw.py
-│   ├── 04_single_group_hmm_ntw.sh
-│   ├── 05_model_comp.py
-│   ├── 06_state_pattern_cluster.py
-│   ├── 07_extract_cluster_data.py
-│   ├── 07_group_cluster_comp.py
-│   ├── 07_map_cluster2stateseq.py
-│   ├── 08_behav_proc.py
-│   ├── 08_stimuli_annot.py
-│   ├── 09_behavior_content_glmm.py
-│   ├── 09_brain_content_glmm.py
-│   ├── 09_brain_content_glmm.sh
-│   ├── 10_result2md.py
-│   ├── __init__.py
-│   └── utils
-│       ├── __init__.py
-│       ├── glmm.py
-│       ├── pattern_cluster.py
-│       └── result2md.py
 ├── environment.yml
 ├── generate_tree.sh
 ├── notebooks
@@ -66,5 +42,5 @@
         ├── pattern_cluster.py
         └── result2md.py
 
-7 directories, 59 files
+5 directories, 37 files
 ```
