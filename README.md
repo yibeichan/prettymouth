@@ -1,6 +1,8 @@
 # Context modulates brain state dynamics and behavioral responses during narrative comprehension
 
-This repository contains the code for the manuscript "Context modulates brain state dynamics and behavioral responses during narrative comprehension".
+This repository contains the code for
+
+Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context modulates brain state dynamics and behavioral responses during narrative comprehension. _bioRxiv_, 2025-04.
 
 <!-- TREE_END -->
 <!-- TREE_START -->
