@@ -160,11 +160,14 @@ class SingleGroupHMM:
             logging.error(f"Error in data preprocessing: {e}")
             raise
 
-    def initialize_model_parameters(self) -> Dict:
+    def initialize_model_parameters(self, seed: Optional[int] = None) -> Dict:
         """
         Initialize HMM parameters with informed priors and numerical stability,
         without biasing different states toward different durations.
-        
+
+        Args:
+            seed: Random seed for reproducible initialization
+
         Returns:
             Dictionary of initial parameter values
         """
@@ -193,6 +196,9 @@ class SingleGroupHMM:
             n_features = self.processed_data.shape[1]
             
             # Option 1: Random initialization (can be replaced with k-means)
+            # Use provided seed for this attempt, ensuring different initializations across attempts
+            if seed is not None:
+                np.random.seed(seed)
             means = np.random.randn(self.config.n_states, n_features)
             
             # Option 2: Using covariance structure of the data for more realistic initialization
@@ -237,8 +243,8 @@ class SingleGroupHMM:
                     init_params=''
                 )
                 
-                # Initialize parameters
-                params = self.initialize_model_parameters()
+                # Initialize parameters with the attempt-specific seed
+                params = self.initialize_model_parameters(seed=seed)
                 model.startprob_ = params['startprob']
                 model.means_ = params['means']
                 model.covars_ = params['covars']
