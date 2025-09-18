@@ -170,8 +170,8 @@ if __name__ == "__main__":
     
     # Set up paths
     parcellation_dir = os.path.join(scratch_dir, "data", "combined_parcellations")
-    extract_parcels_dir = os.path.join(scratch_dir, "output", f"02_extract_parcels_{res}")
-    output_dir = os.path.join(scratch_dir, "output", f"03_network_data_{res}")
+    extract_parcels_dir = os.path.join(scratch_dir, "output_RR", f"02_extract_parcels_{res}")
+    output_dir = os.path.join(scratch_dir, "output_RR", f"03_network_data_{res}")
     os.makedirs(output_dir, exist_ok=True)
     
     # Path to cortical labels file

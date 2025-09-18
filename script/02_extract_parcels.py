@@ -90,8 +90,8 @@ if __name__ == "__main__":
     atlas_name = f"combined_Schaefer2018_1000Parcels_Kong2022_17Networks_Tian_Subcortex_S4_3T_{res}.nii.gz"
     atlas_path = os.path.join(parcellation_dir, atlas_name)
 
-    data_dir = os.path.join(scratch_dir, "output", f"01_postproc_{res}")
-    output_dir = os.path.join(scratch_dir, "output", f"02_extract_parcels_{res}")
+    data_dir = os.path.join(scratch_dir, "output_RR", f"01_postproc_{res}")
+    output_dir = os.path.join(scratch_dir, "output_RR", f"02_extract_parcels_{res}")
     os.makedirs(output_dir, exist_ok=True)
     
     # Combine subject lists

@@ -895,6 +895,125 @@ def enhanced_rank_models(models_df):
     
     return pd.DataFrame(rank_columns)
 
+def plot_loocv_likelihoods(base_dir, groups, output_dir):
+    """
+    Create a plot showing individual-fold and average log-likelihood from LOOCV
+    for each group across different numbers of states (similar to Dynamax example).
+
+    This addresses the reviewer's request for understanding how HMM solutions
+    compare across 2-20 hidden states.
+
+    Args:
+        base_dir: Base directory containing all model folders
+        groups: List of group names to analyze
+        output_dir: Directory to save the plot
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
+
+    for idx, group_name in enumerate(groups):
+        ax = axes[idx]
+
+        # Find all model directories
+        model_dirs = sorted(glob.glob(f"{base_dir}/04_{group_name}_hmm_*states_ntw_*_trimmed"))
+
+        if not model_dirs:
+            ax.text(0.5, 0.5, f"No data for {group_name}",
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_title(f"{group_name.capitalize()} Group")
+            continue
+
+        n_states_list = []
+        mean_likelihoods = []
+        all_fold_likelihoods = []
+
+        for model_dir in model_dirs:
+            # Extract n_states from directory name
+            n_states = int(os.path.basename(model_dir).split('_')[3].replace('states', ''))
+            n_states_list.append(n_states)
+
+            # Load CV results
+            cv_path = os.path.join(model_dir, 'statistics', f"{group_name}_cv_results.json")
+            try:
+                with open(cv_path, 'r') as f:
+                    cv_results = json.load(f)
+
+                # Get individual fold log-likelihoods - using correct field name
+                fold_likelihoods = cv_results.get('log_likelihood', [])
+                mean_likelihoods.append(cv_results['mean_log_likelihood'])
+                all_fold_likelihoods.append(fold_likelihoods)
+
+            except (FileNotFoundError, KeyError) as e:
+                print(f"Could not load CV results for {group_name} with {n_states} states: {e}")
+                continue
+
+        if not n_states_list:
+            continue
+
+        # Plot individual fold likelihoods as scatter points
+        for i, n_states in enumerate(n_states_list):
+            fold_lls = all_fold_likelihoods[i]
+            # Add slight jitter to x-axis for better visualization
+            np.random.seed(42 + i)  # Consistent jitter
+            x_jitter = np.random.uniform(-0.2, 0.2, len(fold_lls))
+            ax.scatter([n_states + xj for xj in x_jitter], fold_lls,
+                      alpha=0.4, s=25, color='cornflowerblue', zorder=1,
+                      label='Individual folds' if i == 0 else "")
+
+        # Plot mean likelihood as a line
+        ax.plot(n_states_list, mean_likelihoods, 'ro-', linewidth=2.5,
+                markersize=7, label='Mean LOOCV', zorder=3)
+
+        # Add error bars (std)
+        if all_fold_likelihoods:
+            stds = [np.std(fold_lls) for fold_lls in all_fold_likelihoods]
+            ax.errorbar(n_states_list, mean_likelihoods, yerr=stds,
+                       fmt='none', ecolor='red', alpha=0.5, capsize=4,
+                       linewidth=1.5, zorder=2)
+
+        # Formatting
+        ax.set_xlabel('Number of Hidden States', fontsize=12)
+        ax.set_ylabel('Log-Likelihood', fontsize=12)
+        ax.set_title(f'{group_name.capitalize()} Group', fontsize=13, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xticks(range(2, 21, 2))  # Show even numbers for clarity
+        ax.set_xlim(1.5, 20.5)
+
+        # Legend only on first subplot
+        if idx == 0:
+            ax.legend(loc='lower right', framealpha=0.9)
+
+        # Mark best model
+        if mean_likelihoods:
+            best_idx = np.argmax(mean_likelihoods)
+            best_n_states = n_states_list[best_idx]
+            best_ll = mean_likelihoods[best_idx]
+            ax.plot(best_n_states, best_ll, 'g*', markersize=15, zorder=4)
+            ax.annotate(f'Best: {best_n_states}',
+                       xy=(best_n_states, best_ll),
+                       xytext=(5, 10), textcoords='offset points',
+                       fontsize=10, color='green', fontweight='bold')
+
+    plt.suptitle('Leave-One-Out Cross-Validation Analysis\n' +
+                 'Comparing HMM solutions across 2-20 hidden states per reviewer request',
+                 fontsize=14, fontweight='bold')
+    plt.tight_layout()
+
+    # Add text explanation for why 2-20 states
+    fig.text(0.5, -0.02,
+             'Range rationale: 2 states (minimum for dynamics) to 20 states ' +
+             '(approaching subject count limit for model identifiability)',
+             ha='center', fontsize=10, style='italic', wrap=True)
+
+    # Save the plot
+    plot_path = os.path.join(output_dir, 'loocv_likelihood_comparison.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.savefig(plot_path.replace('.png', '.pdf'), bbox_inches='tight')
+    print(f"LOOCV likelihood plot saved to {plot_path}")
+    plt.show()
+
+    return fig
+
 def plot_enhanced_comparison(models_df, group_name, output_dir):
     """
     Create enhanced visualizations for model comparison.
@@ -996,15 +1115,22 @@ if __name__ == "__main__":
         
         # Setup paths
     scratch_dir = os.getenv("SCRATCH_DIR")
-    base_dir = os.path.join(scratch_dir, "output")
+    base_dir = os.path.join(scratch_dir, "output_RR")
     # Compare multiple groups
-    groups = ["affair", "paranoia", "combined", "constructed"]
+    groups = ["affair", "paranoia", "combined", "balanced"]
     group_results = {}
-    
+
     for group in groups:
         print(f"\nAnalyzing {group}...")
         group_results[group] = compare_hmm_models_comprehensive(base_dir, group)
-        
+
+    # Create LOOCV likelihood comparison plot for all groups
+    output_dir = os.path.join(base_dir, "05_model_comparison")
+    os.makedirs(output_dir, exist_ok=True)
+
+    print("\nGenerating LOOCV likelihood comparison plot...")
+    plot_loocv_likelihoods(base_dir, groups, output_dir)
+
     # Compare optimal models between groups
     if len(groups) > 1:
         print("\nCross-group comparison:")

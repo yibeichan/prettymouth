@@ -2483,7 +2483,7 @@ def main():
     
     # Optional arguments
     parser.add_argument('--group', type=str, default="combined",
-                        choices=["affair", "paranoia", "combined", "constructed"],
+                        choices=["affair", "paranoia", "combined", "balanced"],
                         help='Group to analyze (affair, paranoia, combined, or constructed)')
     parser.add_argument('--res', type=str, default="native",
                        help='Resolution of the atlas')
@@ -2514,9 +2514,9 @@ def main():
             raise ValueError("SCRATCH_DIR environment variable not set")
             
         if args.trim:
-            output_dir = Path(scratch_dir) / "output" / f"04_{group_name}_hmm_{args.n_states}states_ntw_{args.res}_trimmed"
+            output_dir = Path(scratch_dir) / "output_RR" / f"04_{group_name}_hmm_{args.n_states}states_ntw_{args.res}_trimmed"
         else:
-            output_dir = Path(scratch_dir) / "output" / f"04_{group_name}_hmm_{args.n_states}states_ntw_{args.res}"
+            output_dir = Path(scratch_dir) / "output_RR" / f"04_{group_name}_hmm_{args.n_states}states_ntw_{args.res}"
         
         # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -2609,7 +2609,10 @@ def load_group_data(scratch_dir: str, res: str, group_name: str) -> np.ndarray:
         # Get subject IDs from environment variables
         affair_subjects = os.getenv("AFFAIR_SUBJECTS", "").split(",")
         paranoia_subjects = os.getenv("PARANOIA_SUBJECTS", "").split(",")
-        
+
+        # Initialize selected_indices (only used for balanced group)
+        selected_indices = None
+
         # Determine which subject IDs to load based on group_name
         if group_name.lower() == "affair":
             subjects_to_load = affair_subjects
