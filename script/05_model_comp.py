@@ -36,22 +36,30 @@ def compare_hmm_models_comprehensive(base_dir, group_name):
     for model_dir in model_dirs:
         # Extract n_states from directory name
         n_states = int(os.path.basename(model_dir).split('_')[3].replace('states', ''))
-        n_states_list.append(n_states)
-        
+
         stats_dir = os.path.join(model_dir, 'statistics')
-        
-        # Load CV results
+
+        # Check if required files exist (skip if model failed)
         cv_path = os.path.join(stats_dir, f"{group_name}_cv_results.json")
+        summary_path = os.path.join(stats_dir, f"{group_name}_summary.json")
+        metrics_path = os.path.join(stats_dir, f"{group_name}_metrics.pkl")
+
+        # Skip this model if any required file is missing
+        if not all(os.path.exists(p) for p in [cv_path, summary_path, metrics_path]):
+            print(f"Skipping {group_name} {n_states}-state model: missing required files")
+            continue
+
+        n_states_list.append(n_states)
+
+        # Load CV results
         with open(cv_path, 'r') as f:
             cv_results = json.load(f)
-        
+
         # Load summary stats
-        summary_path = os.path.join(stats_dir, f"{group_name}_summary.json")
         with open(summary_path, 'r') as f:
             summary = json.load(f)
-        
+
         # Load metrics (contains additional information)
-        metrics_path = os.path.join(stats_dir, f"{group_name}_metrics.pkl")
         with open(metrics_path, 'rb') as f:
             metrics = pickle.load(f)
 
@@ -930,7 +938,6 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
         for model_dir in model_dirs:
             # Extract n_states from directory name
             n_states = int(os.path.basename(model_dir).split('_')[3].replace('states', ''))
-            n_states_list.append(n_states)
 
             # Load CV results
             cv_path = os.path.join(model_dir, 'statistics', f"{group_name}_cv_results.json")
@@ -942,9 +949,10 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
                 fold_likelihoods = cv_results.get('log_likelihood', [])
                 mean_likelihoods.append(cv_results['mean_log_likelihood'])
                 all_fold_likelihoods.append(fold_likelihoods)
+                n_states_list.append(n_states)  # Only append if successful
 
             except (FileNotFoundError, KeyError) as e:
-                print(f"Could not load CV results for {group_name} with {n_states} states: {e}")
+                print(f"Skipping {group_name} {n_states}-state model: {e}")
                 continue
 
         if not n_states_list:
@@ -994,16 +1002,15 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
                        xytext=(5, 10), textcoords='offset points',
                        fontsize=10, color='green', fontweight='bold')
 
-    plt.suptitle('Leave-One-Out Cross-Validation Analysis\n' +
-                 'Comparing HMM solutions across 2-20 hidden states per reviewer request',
+    plt.suptitle('Leave-One-Out Cross-Validation\n',
                  fontsize=14, fontweight='bold')
     plt.tight_layout()
 
     # Add text explanation for why 2-20 states
-    fig.text(0.5, -0.02,
-             'Range rationale: 2 states (minimum for dynamics) to 20 states ' +
-             '(approaching subject count limit for model identifiability)',
-             ha='center', fontsize=10, style='italic', wrap=True)
+    # fig.text(0.5, -0.02,
+    #          'Range rationale: 2 states (minimum for dynamics) to 20 states ' +
+    #          '(approaching subject count limit for model identifiability)',
+    #          ha='center', fontsize=10, style='italic', wrap=True)
 
     # Save the plot
     plot_path = os.path.join(output_dir, 'loocv_likelihood_comparison.png')

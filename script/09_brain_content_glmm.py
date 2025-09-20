@@ -114,7 +114,7 @@ class HierarchicalStateAnalysis:
             
             # Define paths based on the data type
             if self.data_type == "combined":
-                base_path = self.output_dir / '07_extracted_cluster_data' / f'th_{self.threshold}_{self.combined_group}_{self.model_pattern}_cluster{self.cluster_id}'
+                base_path = self.output_dir / '07_map_cluster2stateseq' / f'th_{self.threshold}_{self.combined_group}_{self.model_pattern}_cluster{self.cluster_id}'
                 pickle_file = base_path / f'all_subjects_cluster_{self.cluster_id}_timeseries.pkl'
                 self.logger.debug(f"Loading combined pickle data from: {pickle_file}")
                 
@@ -153,15 +153,15 @@ class HierarchicalStateAnalysis:
                 
             elif self.data_type == "paired":
                 # Load affair data
-                affair_path = self.output_dir / '07_extracted_cluster_data' / f'th_{self.threshold}_affair_{self.affair_model_pattern}_cluster{self.cluster_id}'
+                affair_path = self.output_dir / '07_map_cluster2stateseq' / f'th_{self.threshold}_affair_{self.affair_model_pattern}_cluster{self.cluster_id}'
                 affair_pickle = affair_path / f'all_subjects_cluster_{self.cluster_id}_timeseries.pkl'
                 self.logger.debug(f"Loading affair pickle data from: {affair_pickle}")
-                
+
                 with open(affair_pickle, 'rb') as f:
                     affair_data = pickle.load(f)
-                
+
                 # Load paranoia data
-                paranoia_path = self.output_dir / '07_extracted_cluster_data' / f'th_{self.threshold}_paranoia_{self.paranoia_model_pattern}_cluster{self.cluster_id}'
+                paranoia_path = self.output_dir / '07_map_cluster2stateseq' / f'th_{self.threshold}_paranoia_{self.paranoia_model_pattern}_cluster{self.cluster_id}'
                 paranoia_pickle = paranoia_path / f'all_subjects_cluster_{self.cluster_id}_timeseries.pkl'
                 self.logger.debug(f"Loading paranoia pickle data from: {paranoia_pickle}")
                 
@@ -925,7 +925,7 @@ def main():
     
     # Set up paths from environment variables
     scratch_dir = os.getenv("SCRATCH_DIR")
-    output_dir = Path(scratch_dir) / "output"
+    output_dir = Path(scratch_dir) / "output_RR"
     data_dir = Path(scratch_dir) / "data" / "stimuli"
     
     # Format threshold string for paths

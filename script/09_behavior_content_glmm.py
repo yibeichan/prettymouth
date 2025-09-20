@@ -446,7 +446,7 @@ def main():
         print("ERROR: SCRATCH_DIR environment variable not set!")
         return
         
-    output_dir = Path(scratch_dir) / "output"
+    output_dir = Path(scratch_dir) / "output_RR"
     data_dir = Path(scratch_dir) / 'data' / 'stimuli'
     
     print(f"Output directory: {output_dir}")

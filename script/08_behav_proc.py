@@ -123,16 +123,16 @@ def map_boundary2seg(seg_df, boundaries, filepath):
     for i, r in enumerate(boundaries):
         if i == 0:  # First iteration
             seg_index = seg_df[seg_df['onset_TRs'] < r].index[-1]
-            seg = seg_df.iloc[:seg_index]['Seg'].tolist()
+            seg = seg_df.iloc[:seg_index]['seg'].tolist()
         elif i == len(boundaries) - 1:  # Last iteration
             prev_r = boundaries[i-1]
             prev_seg_index = seg_df[seg_df['onset_TRs'] <= prev_r].index[-1]
-            seg = seg_df.iloc[prev_seg_index:]['Seg'].tolist()
+            seg = seg_df.iloc[prev_seg_index:]['seg'].tolist()
         else:  # Subsequent iterations
             prev_r = boundaries[i-1]
             prev_seg_index = seg_df[seg_df['onset_TRs'] <= prev_r].index[-1]
             seg_index = seg_df[seg_df['onset_TRs'] < r].index[-1]
-            seg = seg_df.iloc[prev_seg_index:seg_index]['Seg'].tolist()
+            seg = seg_df.iloc[prev_seg_index:seg_index]['seg'].tolist()
 
         result.append({'boundary': r, 'segments': " ".join(seg)})
     pd.DataFrame(result).to_csv(filepath, index=False)
@@ -291,7 +291,7 @@ if __name__ == '__main__':
     data_dir = os.path.join(scratch_dir, "data")
     behav_dir = os.path.join(data_dir, "behav")
     stimuli_dir = os.path.join(data_dir, "stimuli")
-    output_dir = os.path.join(scratch_dir, "output", "08_behav_results")
+    output_dir = os.path.join(scratch_dir, "output_RR", "08_behav_results")
     os.makedirs(output_dir, exist_ok=True)
 
     stimuli_file1 = os.path.join(stimuli_dir, "word_by_onset.csv")

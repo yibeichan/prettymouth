@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 import pickle
 from collections import defaultdict
+from datetime import datetime
 
 
 def setup_logging(output_dir):
@@ -180,13 +181,13 @@ def extract_state_sequence(state_info, output_dir):
     base_output_dir = os.getenv('SCRATCH_DIR')
     if not base_output_dir:
         base_output_dir = os.path.dirname(os.path.dirname(output_dir))  # Fallback if env var not set
-    
+
     model_base_path = format_model_path(state_info['group'], state_info['n_states'])
     sequence_file = os.path.join(
-        base_output_dir, 
-        'output',
-        model_base_path, 
-        'statistics', 
+        base_output_dir,
+        'output_RR',
+        model_base_path,
+        'statistics',
         f"{state_info['group']}_state_sequences.npy"
     )
     
@@ -429,7 +430,7 @@ def main():
     parser.add_argument('--threshold', type=float, required=True,
                         help='Threshold value (e.g., 0.75)')
     parser.add_argument('--output-dir', type=str, default=None,
-                        help='Output directory (default: SCRATCH_DIR/output/07_extracted_cluster_data/TH_GROUP_MODEL_CLUSTER)')
+                        help='Output directory (default: SCRATCH_DIR/output_RR/07_extracted_cluster_data/TH_GROUP_MODEL_CLUSTER)')
     parser.add_argument('--list-models', action='store_true',
                         help='List available models for the specified cluster and group')
     
@@ -441,7 +442,7 @@ def main():
         raise ValueError("SCRATCH_DIR environment variable not set")
     
     # Set paths
-    base_output_dir = os.path.join(scratch_dir, 'output')
+    base_output_dir = os.path.join(scratch_dir, 'output_RR')
     
     # Format threshold string
     threshold_str = f"{args.threshold:.2f}".replace('.', '')
@@ -520,7 +521,7 @@ def main():
             'model_pattern': args.model_pattern,
             'threshold': args.threshold,
             'state_info': state_info,
-            'extraction_time': str(np.datetime64('now'))
+            'extraction_time': datetime.now().isoformat()
         }
         
         with open(os.path.join(output_dir, 'extraction_config.json'), 'w') as f:
