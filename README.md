@@ -8,6 +8,7 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -16,6 +17,7 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
 ├── environment.yml
 ├── generate_tree.sh
 ├── notebooks
+│   ├── RR_figure5_supplement.ipynb
 │   ├── behav.ipynb
 │   ├── figure1.ipynb
 │   ├── figure2.ipynb
@@ -41,8 +43,11 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
     ├── 07_group_cluster_comp.py
     ├── 07_map_cluster2stateseq.py
     ├── 08_behav_proc.py
+    ├── 08_behav_proc_bin_1s.py
     ├── 08_stimuli_annot.py
+    ├── 08_stimuli_annot_bin_1s.py
     ├── 09_behavior_content_glmm.py
+    ├── 09_behavior_content_glmm_bin_1s.py
     ├── 09_brain_content_glmm.py
     ├── 09_brain_content_glmm.sh
     ├── 10_result2md.py
@@ -53,6 +58,6 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
         ├── pattern_cluster.py
         └── result2md.py
 
-5 directories, 37 files
+5 directories, 41 files
 ```
 <!-- TREE_END -->
