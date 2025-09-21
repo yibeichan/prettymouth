@@ -99,7 +99,7 @@ def create_annotations(segments_df: pd.DataFrame, words_df: pd.DataFrame) -> pd.
             
             # Context
             'segment_onset': current_segment['onset_sec'],
-            'segment_text': current_segment['Seg'],
+            'segment_text': current_segment['seg'],
             'speaker': current_segment['speaker'],
             'main_char': current_segment['main_char']
         }
