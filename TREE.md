@@ -16,13 +16,9 @@
 │   ├── behavioral_content_analysis.md
 │   ├── behavioral_content_analysis_supplement.md
 │   ├── cluster1_combined_2states_deviation_th080.md
-│   ├── cluster1_combined_2states_deviation_th085.md
-│   ├── cluster2_combined_12states_deviation_th085.md
 │   ├── cluster2_combined_7states_deviation_th080.md
 │   ├── cluster3_combined_2states_deviation_th080.md
-│   ├── cluster3_combined_2states_deviation_th085.md
-│   ├── cluster4_combined_6states_deviation_th080.md
-│   └── cluster4_combined_8states_deviation_th085.md
+│   └── cluster4_combined_6states_deviation_th080.md
 └── script
     ├── 01_postproc.py
     ├── 01_postproc.sh
@@ -52,5 +48,5 @@
         ├── pattern_cluster.py
         └── result2md.py
 
-5 directories, 47 files
+5 directories, 43 files
 ```
