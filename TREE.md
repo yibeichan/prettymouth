@@ -14,9 +14,14 @@
 │   └── figure5.ipynb
 ├── results
 │   ├── behavioral_content_analysis.md
+│   ├── behavioral_content_analysis_supplement.md
+│   ├── cluster1_combined_2states_deviation_th080.md
 │   ├── cluster1_combined_2states_deviation_th085.md
 │   ├── cluster2_combined_12states_deviation_th085.md
+│   ├── cluster2_combined_7states_deviation_th080.md
+│   ├── cluster3_combined_2states_deviation_th080.md
 │   ├── cluster3_combined_2states_deviation_th085.md
+│   ├── cluster4_combined_6states_deviation_th080.md
 │   └── cluster4_combined_8states_deviation_th085.md
 └── script
     ├── 01_postproc.py
@@ -27,6 +32,7 @@
     ├── 04_single_group_hmm_ntw.sh
     ├── 05_model_comp.py
     ├── 06_state_pattern_cluster.py
+    ├── 07_RR_correlation.py
     ├── 07_extract_cluster_data.py
     ├── 07_group_cluster_comp.py
     ├── 07_map_cluster2stateseq.py
@@ -46,5 +52,5 @@
         ├── pattern_cluster.py
         └── result2md.py
 
-5 directories, 41 files
+5 directories, 47 files
 ```
