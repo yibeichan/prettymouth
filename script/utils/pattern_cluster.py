@@ -34,14 +34,14 @@ plt.rcParams.update({
 })
 
 COLORS = {
-    'affair': '#e41a1c',      # Red
-    'affair_light': '#ff6666', # Light red
-    'paranoia': '#4daf4a',    # Green
-    'paranoia_light': '#90ee90', # Light green
-    'combined': '#984ea3',    # Purple
-    'combined_light': '#d8b2d8', # Light purple
-    'balanced': '#377eb8',   # Blue
-    'balanced_light': '#99c2ff' # Light blue
+    'affair': '#E1BE6A',      # Yellow/colorblind friendly
+    'affair_light': '#F2CB69', # Light yellow/colorblind friendly
+    'paranoia': '#40B0A6',    # Green/colorblind friendly
+    'paranoia_light': '#90ee90', # Light green/colorblind friendly
+    'combined': '#6B15A7',    # Purple/colorblind friendly
+    'combined_light': '#C448C5', # Light purple/colorblind friendly
+    'balanced': '#3096DF',   # Blue/colorblind friendly
+    'balanced_light': '#BFF5F9' # Light blue/colorblind friendly
 }
 
 class NumpyEncoder(json.JSONEncoder):
@@ -347,30 +347,41 @@ class StatePatternAnalyzer:
     def _select_significant_features(self, mean_pattern, ci, pattern_stability):
         """
         Select significant features using statistical reliability criteria.
-        
+
         For HMM state patterns, we want features that are:
         1. Consistently activated above threshold
-        2. Statistically reliable (lower CI bound > 0)
-        
-        We ignore feature importance since co-activation is our primary concern.
+        2. Statistically reliable (CI bounds indicate significance)
+
+        The CI threshold is scaled by pattern stability - more stable patterns
+        have already proven their reliability through replication, so we can be
+        more lenient with CI bounds.
         """
-        # Activation threshold - features must exceed minimum activation
+        # Base criterion: activation above threshold
         reliable_activation = mean_pattern > self.config['min_activation']
-        
-        # Statistical reliability - lower confidence bound must be positive
+
+        # Statistical reliability with stability-scaled threshold
         if ci.ndim != 2 or ci.shape[1] < 2:
             self.logger.warning(f"Invalid CI shape: {ci.shape if hasattr(ci, 'shape') else 'unknown'}")
             reliable_direction = np.zeros_like(mean_pattern, dtype=bool)
         else:
-            reliable_direction = ci[:, 0] > 0
-        
-        # For very stable patterns, we could be less strict on CI bounds
-        if pattern_stability > 0.8:  # High stability patterns
-            # For highly stable patterns, activation above threshold is sufficient
-            return reliable_activation
-        else:
-            # For less stable patterns, require statistical reliability
-            return reliable_activation & reliable_direction
+            # Scale CI requirement by stability - more stable = more lenient
+            # For stability=1.0, ci_threshold = 0.0 (any positive CI is OK)
+            # For stability=0.9, ci_threshold = 0.01 (slightly positive required)
+            # For stability=0.5, ci_threshold = 0.05 (clearly positive required)
+            # For stability=0.0, ci_threshold = 0.1 (strongly positive required)
+            ci_threshold = 0.1 * (1 - pattern_stability)
+            reliable_direction = ci[:, 0] > ci_threshold
+
+            # Log the threshold being used for transparency
+            if hasattr(self, '_logged_thresholds') is False:
+                self._logged_thresholds = set()
+
+            threshold_key = f"{pattern_stability:.2f}_{ci_threshold:.3f}"
+            if threshold_key not in self._logged_thresholds:
+                self.logger.debug(f"Pattern stability {pattern_stability:.2f} -> CI threshold {ci_threshold:.3f}")
+                self._logged_thresholds.add(threshold_key)
+
+        return reliable_activation & reliable_direction
     
     def cluster_patterns_across_groups(self):
         """Cluster patterns across all groups using Jaccard distance."""

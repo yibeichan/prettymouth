@@ -12,7 +12,8 @@ from sklearn.manifold import MDS, TSNE
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score
 from natsort import natsorted
-from scipy.stats import entropy, chi2_contingency, fisher_exact
+from scipy.stats import chi2_contingency, fisher_exact
+from scipy.special import rel_entr
 import statsmodels.api as sm
 from statsmodels.stats.multitest import multipletests
 import scipy
@@ -302,12 +303,16 @@ class GroupModelComparison:
             # First component: KL(p1||m)
             mask1 = p1 > 0
             if np.any(mask1):
-                js_divergence += 0.5 * entropy(p1[mask1], m[mask1])
-            
+                # KL divergence: sum(p * log(p/q))
+                kl1 = np.sum(rel_entr(p1[mask1], m[mask1]))
+                js_divergence += 0.5 * kl1
+
             # Second component: KL(p2||m)
             mask2 = p2 > 0
             if np.any(mask2):
-                js_divergence += 0.5 * entropy(p2[mask2], m[mask2])
+                # KL divergence: sum(p * log(p/q))
+                kl2 = np.sum(rel_entr(p2[mask2], m[mask2]))
+                js_divergence += 0.5 * kl2
             
             position_cluster_dists.append(1 - js_divergence)  # Convert to similarity
             
@@ -338,7 +343,7 @@ class GroupModelComparison:
                 position_scores.append(0)
         
         # Apply position weighting (earlier positions could be more important)
-        weights = np.linspace(1.0, 0.5, len(position_scores))
+        weights = np.linspace(1.0, 0.5, len(position_scores)) if len(position_scores) > 0 else np.array([])
         weighted_scores = np.array(position_scores) * weights
         
         # Calculate FDR-corrected p-values
@@ -539,7 +544,7 @@ class GroupModelComparison:
                 }
         
         # Calculate overall similarity as weighted average
-        weights = np.linspace(1.0, 0.5, len(position_similarities))
+        weights = np.linspace(1.0, 0.5, len(position_similarities)) if len(position_similarities) > 0 else np.array([])
         weighted_sims = [position_similarities[pos] * weights[pos] for pos in range(len(weights))]
         overall_similarity = sum(weighted_sims) / sum(weights) if sum(weights) > 0 else 0
         
@@ -679,12 +684,16 @@ class GroupModelComparison:
                         # First component: KL(p1||m) - only for non-zero p1
                         mask1 = p1 > 0
                         if np.any(mask1):
-                            js_divergence += 0.5 * entropy(p1[mask1], m[mask1])
-                        
+                            # KL divergence: sum(p * log(p/q))
+                            kl1 = np.sum(rel_entr(p1[mask1], m[mask1]))
+                            js_divergence += 0.5 * kl1
+
                         # Second component: KL(p2||m) - only for non-zero p2
                         mask2 = p2 > 0
                         if np.any(mask2):
-                            js_divergence += 0.5 * entropy(p2[mask2], m[mask2])
+                            # KL divergence: sum(p * log(p/q))
+                            kl2 = np.sum(rel_entr(p2[mask2], m[mask2]))
+                            js_divergence += 0.5 * kl2
                         
                         # Convert to distance (0-1 range)
                         js_dist = np.sqrt(js_divergence) if js_divergence >= 0 else 0
@@ -1360,8 +1369,8 @@ class GroupModelComparison:
         combined_distance = (distance_matrix_pos + distance_matrix_trans) / 2
         
         # Apply t-SNE (with small perplexity due to few samples)
-        tsne = TSNE(n_components=2, metric='precomputed', 
-                  perplexity=max(3, n_groups/2), random_state=self.random_seed)
+        tsne = TSNE(n_components=2, metric='precomputed',
+                  perplexity=min(max(3, n_groups/2), n_groups-1), random_state=self.random_seed)
         
         try:
             points_tsne = tsne.fit_transform(combined_distance)
@@ -1629,7 +1638,7 @@ if __name__ == "__main__":
     except:
         scratch_dir = None
         
-    base_dir = os.path.join(scratch_dir, "output") if scratch_dir else "output"
+    base_dir = os.path.join(scratch_dir, "output_RR") if scratch_dir else "output_RR"
     output_dir = os.path.join(base_dir, "07_group_cluster_comp")
     groups = ["affair", "paranoia", "combined", "balanced"]
     thresholds = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
