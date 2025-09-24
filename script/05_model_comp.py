@@ -908,6 +908,8 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
     Create a plot showing individual-fold and average log-likelihood from LOOCV
     for each group across different numbers of states (similar to Dynamax example).
 
+    Includes outlier detection and handling for numerical instabilities.
+
     This addresses the reviewer's request for understanding how HMM solutions
     compare across 2-20 hidden states.
 
@@ -918,6 +920,9 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
     """
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
+
+    # Track outliers for reporting
+    outlier_summary = {}
 
     for idx, group_name in enumerate(groups):
         ax = axes[idx]
@@ -934,6 +939,8 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
         n_states_list = []
         mean_likelihoods = []
         all_fold_likelihoods = []
+        outlier_states = []  # States with filtered outliers but still plotted
+        skipped_states = []  # States completely skipped due to severe issues
 
         for model_dir in model_dirs:
             # Extract n_states from directory name
@@ -947,9 +954,57 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
 
                 # Get individual fold log-likelihoods - using correct field name
                 fold_likelihoods = cv_results.get('log_likelihood', [])
-                mean_likelihoods.append(cv_results['mean_log_likelihood'])
-                all_fold_likelihoods.append(fold_likelihoods)
-                n_states_list.append(n_states)  # Only append if successful
+                mean_ll = cv_results['mean_log_likelihood']
+
+                # Validate data exists
+                if not fold_likelihoods:
+                    print(f"Warning: No fold likelihoods found for {group_name} {n_states}-state")
+                    continue
+
+                fold_array = np.array(fold_likelihoods)
+                if fold_array.size == 0:
+                    print(f"Warning: Empty fold likelihoods for {group_name} {n_states}-state")
+                    continue
+
+                # Outlier detection: Check for numerical instabilities
+                # Adjusted bounds for fMRI data - more lenient to avoid over-filtering
+                reasonable_min = -100000  # More lenient for high-dimensional fMRI data
+                reasonable_max = 0
+
+                # Check if mean or any folds are outliers
+                is_mean_outlier = (mean_ll < reasonable_min) or (mean_ll > reasonable_max)
+                fold_outliers = (fold_array < reasonable_min) | (fold_array > reasonable_max)
+
+                if is_mean_outlier or np.any(fold_outliers):
+                    # Filter out extreme outliers from folds
+                    filtered_folds = fold_array[~fold_outliers]
+
+                    if len(filtered_folds) > 3:  # Need enough folds for reliable mean
+                        # Recalculate mean from non-outlier folds
+                        filtered_mean = np.mean(filtered_folds)
+
+                        if reasonable_min <= filtered_mean <= reasonable_max:
+                            # Use filtered data
+                            n_states_list.append(n_states)
+                            mean_likelihoods.append(filtered_mean)
+                            all_fold_likelihoods.append(filtered_folds.tolist())
+                            outlier_states.append(n_states)  # Mark as having filtered outliers
+                            print(f"Filtered outliers for {group_name} {n_states}-state: {np.sum(fold_outliers)} of {len(fold_array)} folds")
+                        else:
+                            # Skip this state entirely
+                            print(f"Skipping {group_name} {n_states}-state: severe numerical issues after filtering")
+                            skipped_states.append(n_states)
+                            continue
+                    else:
+                        # Too many outliers, skip this state
+                        print(f"Skipping {group_name} {n_states}-state: too many outlier folds ({np.sum(fold_outliers)} of {len(fold_array)})")
+                        skipped_states.append(n_states)
+                        continue
+                else:
+                    # No outliers, use original data
+                    n_states_list.append(n_states)
+                    mean_likelihoods.append(mean_ll)
+                    all_fold_likelihoods.append(fold_likelihoods)
 
             except (FileNotFoundError, KeyError) as e:
                 print(f"Skipping {group_name} {n_states}-state model: {e}")
@@ -958,15 +1013,41 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
         if not n_states_list:
             continue
 
+        # Sort all data by n_states to ensure proper plotting order
+        # Create sorted indices
+        sorted_indices = np.argsort(n_states_list)
+        n_states_list = [n_states_list[i] for i in sorted_indices]
+        mean_likelihoods = [mean_likelihoods[i] for i in sorted_indices]
+        all_fold_likelihoods = [all_fold_likelihoods[i] for i in sorted_indices]
+
+        # Store outlier info - include both filtered and skipped states
+        outlier_summary[group_name] = {
+            'filtered': outlier_states,
+            'skipped': skipped_states
+        }
+
         # Plot individual fold likelihoods as scatter points
+        legend_added_normal = False
+        legend_added_filtered = False
+
         for i, n_states in enumerate(n_states_list):
             fold_lls = all_fold_likelihoods[i]
             # Add slight jitter to x-axis for better visualization
             np.random.seed(42 + i)  # Consistent jitter
             x_jitter = np.random.uniform(-0.2, 0.2, len(fold_lls))
+
+            # Color differently if this state had outliers filtered
+            if n_states in outlier_states:
+                point_color = 'orange'
+                label = 'Filtered folds' if not legend_added_filtered else ""
+                legend_added_filtered = True
+            else:
+                point_color = 'cornflowerblue'
+                label = 'Individual folds' if not legend_added_normal else ""
+                legend_added_normal = True
+
             ax.scatter([n_states + xj for xj in x_jitter], fold_lls,
-                      alpha=0.4, s=25, color='cornflowerblue', zorder=1,
-                      label='Individual folds' if i == 0 else "")
+                      alpha=0.4, s=25, color=point_color, zorder=1, label=label)
 
         # Plot mean likelihood as a line
         ax.plot(n_states_list, mean_likelihoods, 'ro-', linewidth=2.5,
@@ -984,7 +1065,10 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
         ax.set_ylabel('Log-Likelihood', fontsize=12)
         ax.set_title(f'{group_name.capitalize()} Group', fontsize=13, fontweight='bold')
         ax.grid(True, alpha=0.3, linestyle='--')
-        ax.set_xticks(range(2, 21, 2))  # Show even numbers for clarity
+        # Show all x-ticks from 2-20 for better visual continuity
+        ax.set_xticks(range(2, 21))
+        # But only label every other one to avoid crowding
+        ax.set_xticklabels([str(i) if i % 2 == 0 else '' for i in range(2, 21)])
         ax.set_xlim(1.5, 20.5)
 
         # Legend only on first subplot
@@ -1002,21 +1086,53 @@ def plot_loocv_likelihoods(base_dir, groups, output_dir):
                        xytext=(5, 10), textcoords='offset points',
                        fontsize=10, color='green', fontweight='bold')
 
+        # Add outlier indicator if any states were filtered or skipped
+        if outlier_states or skipped_states:
+            # Mark skipped states with vertical lines
+            for skipped_state in skipped_states:
+                ax.axvline(x=skipped_state, color='red', linestyle=':', alpha=0.3, linewidth=1)
+
+            # Add text note about outliers
+            text_lines = []
+            if outlier_states:
+                text_lines.append(f"Filtered: {len(outlier_states)} states")
+            if skipped_states:
+                text_lines.append(f"Skipped: {skipped_states}")
+
+            outlier_text = '\n'.join(text_lines)
+            ax.text(0.98, 0.02, outlier_text,
+                   transform=ax.transAxes, fontsize=9,
+                   ha='right', va='bottom', color='red', alpha=0.7)
+
     plt.suptitle('Leave-One-Out Cross-Validation\n',
                  fontsize=14, fontweight='bold')
     plt.tight_layout()
 
-    # Add text explanation for why 2-20 states
-    # fig.text(0.5, -0.02,
-    #          'Range rationale: 2 states (minimum for dynamics) to 20 states ' +
-    #          '(approaching subject count limit for model identifiability)',
-    #          ha='center', fontsize=10, style='italic', wrap=True)
+    # Add text explanation for outlier handling
+    has_outliers = any(v.get('filtered') or v.get('skipped') for v in outlier_summary.values() if isinstance(v, dict))
+    if has_outliers:
+        fig.text(0.5, -0.02,
+                'Note: Extreme outliers (|LL| > 100,000) filtered for numerical stability. ' +
+                'Orange points indicate states with filtered outliers, red lines mark skipped states.',
+                ha='center', fontsize=9, style='italic', wrap=True, color='gray')
 
     # Save the plot
     plot_path = os.path.join(output_dir, 'loocv_likelihood_comparison.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.savefig(plot_path.replace('.png', '.pdf'), bbox_inches='tight')
     print(f"LOOCV likelihood plot saved to {plot_path}")
+
+    # Report outlier summary
+    if any(outlier_summary.values()):
+        print("\nOutlier Summary:")
+        for group, info in outlier_summary.items():
+            if isinstance(info, dict) and (info.get('filtered') or info.get('skipped')):
+                print(f"  {group}:")
+                if info.get('filtered'):
+                    print(f"    States with filtered outliers: {info['filtered']}")
+                if info.get('skipped'):
+                    print(f"    States skipped entirely: {info['skipped']}")
+
     plt.show()
 
     return fig
