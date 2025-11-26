@@ -33,15 +33,26 @@ plt.rcParams.update({
     'figure.facecolor': 'white'
 })
 
+# COLORS = {
+#     'affair': '#E1BE6A',      # Yellow/colorblind friendly
+#     'affair_light': '#F2CB69', # Light yellow/colorblind friendly
+#     'paranoia': '#40B0A6',    # Green/colorblind friendly
+#     'paranoia_light': '#90ee90', # Light green/colorblind friendly
+#     'combined': '#6B15A7',    # Purple/colorblind friendly
+#     'combined_light': '#C448C5', # Light purple/colorblind friendly
+#     'balanced': '#3096DF',   # Blue/colorblind friendly
+#     'balanced_light': '#BFF5F9' # Light blue/colorblind friendly
+# }
+
 COLORS = {
     'affair': '#E1BE6A',      # Yellow/colorblind friendly
     'affair_light': '#F2CB69', # Light yellow/colorblind friendly
     'paranoia': '#40B0A6',    # Green/colorblind friendly
     'paranoia_light': '#90ee90', # Light green/colorblind friendly
-    'combined': '#6B15A7',    # Purple/colorblind friendly
-    'combined_light': '#C448C5', # Light purple/colorblind friendly
-    'balanced': '#3096DF',   # Blue/colorblind friendly
-    'balanced_light': '#BFF5F9' # Light blue/colorblind friendly
+    'combined': '#d8b2d8',    # 
+    'combined_light': '#C448C5', # 
+    'balanced': '#b2b5d8',   # 
+    'balanced_light': '#BFF5F9' # 
 }
 
 class NumpyEncoder(json.JSONEncoder):
