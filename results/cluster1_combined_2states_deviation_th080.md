@@ -10,8 +10,8 @@ This document contains all statistical tables from the brain state GLMM analysis
 4. [Cross-Validation Summary](#4-cross-validation-summary)
 5. [State Occupancy Rates](#5-state-occupancy-rates)
 6. [State Transition Rates](#6-state-transition-rates)
-7. [Publication-Ready Main Effects](#7-publication-ready-main-effects)
-8. [Publication-Ready Group Effects](#8-publication-ready-group-effects)
+7. [Main Effects](#7-main-effects)
+8. [Group Effects](#8-group-effects)
 
 ---
 
@@ -116,9 +116,9 @@ This table presents the state entry and exit rates for each experimental group.
 
 ---
 
-## 7. Publication-Ready Main Effects
+## 7. Main Effects
 
-Publication-ready table of main effects and interactions. Significance: * BF > 3, ** BF > 10, *** BF > 100.
+Table of main effects and interactions. Significance: * BF > 3, ** BF > 10, *** BF > 100.
 
 | Feature                             | Coef ± SE         |   P(Effect > 0) |   Bayes Factor |   Odds Ratio |
 |:------------------------------------|:------------------|----------------:|---------------:|-------------:|
@@ -145,9 +145,9 @@ Publication-ready table of main effects and interactions. Significance: * BF > 3
 
 ---
 
-## 8. Publication-Ready Group Effects
+## 8. Group Effects
 
-Publication-ready table of group-specific effects. † indicates credible differences (FDR < 0.05).
+Table of group-specific effects. † indicates credible differences (FDR < 0.05).
 
 | Feature           |   Affair Coef |   Paranoia Coef | Group Difference   |   P(Stronger in Affair) |
 |:------------------|--------------:|----------------:|:-------------------|------------------------:|
