@@ -16,6 +16,7 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -47,11 +48,11 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
     ├── 04_single_group_hmm_ntw.sh
     ├── 05_model_comp.py
     ├── 06_state_pattern_cluster.py
+    ├── 07_RR_cluster_stability.py
     ├── 07_RR_cluster_viz.py
     ├── 07_RR_correlation.py
     ├── 07_RR_individual_states.py
     ├── 07_extract_cluster_data.py
-    ├── 07_group_cluster_comp.py
     ├── 07_map_cluster2stateseq.py
     ├── 08_behav_proc.py
     ├── 08_behav_proc_bin_1s.py
