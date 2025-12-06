@@ -17,6 +17,7 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
 <!-- TREE_END -->
 <!-- TREE_END -->
 <!-- TREE_END -->
+<!-- TREE_END -->
 <!-- TREE_START -->
 ```
 .
@@ -31,6 +32,7 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
 │   ├── figure4.ipynb
+│   ├── figure4_RR.ipynb
 │   └── figure5.ipynb
 ├── results
 │   ├── behavioral_content_analysis.md
@@ -70,6 +72,6 @@ Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context
         ├── pattern_cluster.py
         └── result2md.py
 
-5 directories, 45 files
+5 directories, 46 files
 ```
 <!-- TREE_END -->

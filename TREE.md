@@ -11,6 +11,7 @@
 │   ├── figure2.ipynb
 │   ├── figure3.ipynb
 │   ├── figure4.ipynb
+│   ├── figure4_RR.ipynb
 │   └── figure5.ipynb
 ├── results
 │   ├── behavioral_content_analysis.md
@@ -50,5 +51,5 @@
         ├── pattern_cluster.py
         └── result2md.py
 
-5 directories, 45 files
+5 directories, 46 files
 ```
