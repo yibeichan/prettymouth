@@ -2,7 +2,7 @@
 
 This repository contains the code for
 
-Chen, Y., Zada, Z., Nastase, S. A., Ashby, F. G., & Ghosh, S. S. (2025). Context modulates brain state dynamics and behavioral responses during narrative comprehension. _bioRxiv_, 2025-04.
+Yibei Chen, Zaid Zada, Samuel A. Nastase, F. Gregory Ashby, Satrajit S. Ghosh; Context modulates brain state dynamics and behavioral responses during narrative comprehension. _Imaging Neuroscience_ 2026; 4 IMAG.a.1116. doi: [https://doi.org/10.1162/IMAG.a.1116](https://doi.org/10.1162/IMAG.a.1116)
 
 <!-- TREE_END -->
 <!-- TREE_END -->
